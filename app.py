@@ -12,7 +12,6 @@ def load_data():
     skip = 1 if first_line.startswith("sep=") else 0
     df = pd.read_csv("hockey_tag_data.csv", skiprows=skip, sep=None, engine='python')
     
-    # Varmistetaan numeeriset arvot
     all_possible_cols = [
         "Goal for", "Chance for", "Goal for PP", "Chance for PP",
         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"
@@ -65,19 +64,14 @@ with tab1:
 with tab2:
     st.subheader("Player Statistics by Role (For / Involved)")
     
-    # Määritellään haettavat stat-tyypit
-    base_metrics = ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-                    "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
-    
     all_players = pd.unique(filtered_df[['Player 1', 'Player 2', 'Player 3']].values.ravel())
     players_list = [p for p in all_players if pd.notna(p) and str(p).strip() != '' and str(p).strip() != 'nan']
     
     player_rows = []
     for p in players_list:
         p_str = str(p).strip()
-        row_data = {'Player': p_str}
         
-        # 1. Kun pelaaja on Player 1 (Omat teot)
+        # 1. Kun pelaaja on Player 1 (Pääasiallinen tekijä)
         df_p1 = filtered_df[filtered_df['Player 1'].astype(str).str.strip() == p_str]
         
         # 2. Kun pelaaja on Player 2 tai 3 (Mukana / INV)
@@ -86,19 +80,33 @@ with tab2:
             (filtered_df['Player 3'].astype(str).str.strip() == p_str)
         ]
         
-        for metric in base_metrics:
-            if metric in filtered_df.columns:
-                # Pääasiallinen arvo (Player 1)
-                row_data[metric] = int(df_p1[metric].sum())
-                # Mukanaoloarvo (Player 2 & 3) -> tallennetaan INV-sarakkeena
-                row_data[f"{metric} INV"] = int(df_inv[metric].sum())
-                
+        # 3. Kun pelaaja on millä tahansa paikalla (käytetään puolustus-/agn-tilastoissa, jos halutaan kentällä olo)
+        df_any = filtered_df[
+            (filtered_df['Player 1'].astype(str).str.strip() == p_str) | 
+            (filtered_df['Player 2'].astype(str).str.strip() == p_str) | 
+            (filtered_df['Player 3'].astype(str).str.strip() == p_str)
+        ]
+        
+        row_data = {
+            'Player': p_str,
+            'Goal for': int(df_p1['Goal for'].sum()) if 'Goal for' in df_p1 else 0,
+            'Goal for INV': int(df_inv['Goal for'].sum()) if 'Goal for' in df_inv else 0,
+            'Chance for': int(df_p1['Chance for'].sum()) if 'Chance for' in df_p1 else 0,
+            'Chance for INV': int(df_inv['Chance for'].sum()) if 'Chance for' in df_inv else 0,
+            'Goal for PP': int(df_p1['Goal for PP'].sum()) if 'Goal for PP' in df_p1 else 0,
+            'Goal for PP inv': int(df_inv['Goal for PP'].sum()) if 'Goal for PP' in df_inv else 0,
+            'Chance for PP': int(df_p1['Chance for PP'].sum()) if 'Chance for PP' in df_p1 else 0,
+            'Chance for inv PP': int(df_inv['Chance for PP'].sum()) if 'Chance for PP' in df_inv else 0,
+            'Goal agn': int(df_any['Goal agn'].sum()) if 'Goal agn' in df_any else 0,
+            'Chance agn': int(df_any['Chance agn'].sum()) if 'Chance agn' in df_any else 0,
+            'Goal agn PP': int(df_any['Goal agn PP'].sum()) if 'Goal agn PP' in df_any else 0,
+            'Chance agn PP': int(df_any['Chance agn PP'].sum()) if 'Chance agn PP' in df_any else 0,
+        }
         player_rows.append(row_data)
         
     player_df = pd.DataFrame(player_rows)
     if not player_df.empty:
-        sort_col = "Goal for" if "Goal for" in player_df.columns else player_df.columns[1]
-        player_df = player_df.set_index('Player').sort_values(by=sort_col, ascending=False)
+        player_df = player_df.set_index('Player').sort_values(by='Goal for', ascending=False)
         st.dataframe(player_df, use_container_width=True)
     else:
         st.info("No player data available.")
