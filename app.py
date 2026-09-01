@@ -47,7 +47,7 @@ col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
-# 4. Välilehdet (Lisätty Visuals-välilehti)
+# 4. Välilehdet
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Scoring Chances Team", 
     "👤 Scoring Chances Players", 
@@ -56,12 +56,29 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("Team Statistics by Descriptor")
-    desc_summary = filtered_df.groupby("Descriptor")[
+    st.subheader("Team Statistics by Category (OZP / Rush / Takeaway)")
+    
+    def get_category(desc):
+        d = str(desc).lower()
+        if "ozp" in d:
+            return "OZP"
+        elif "rush" in d:
+            return "Rush"
+        elif "takeaway" in d:
+            return "Takeaway"
+        else:
+            return "Other"
+            
+    team_df = filtered_df.copy()
+    team_df["Category"] = team_df["Descriptor"].apply(get_category)
+    
+    team_summary = team_df.groupby("Category")[
         ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"]
+         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
     ].sum()
-    st.dataframe(desc_summary, use_container_width=True)
+    
+    team_summary["Total (Net)"] = (team_summary["Goal for"] + team_summary["Chance for"]) - (team_summary["Goal agn"] + team_summary["Chance agn"])
+    st.dataframe(team_summary, use_container_width=True)
 
 with tab2:
     st.subheader("Player Statistics by Outcome Columns")
@@ -95,12 +112,9 @@ with tab2:
 
 with tab3:
     st.subheader("Visualizations & Performance Charts")
-    
     if not player_df.empty:
         st.markdown("### Player Net Performance (5v5 Net)")
-        # Piirretään pylväskaavio pelaajien nettotuloksista
-        net_chart_data = player_df[['Total (5v5 Net)']]
-        st.bar_chart(net_chart_data)
+        st.bar_chart(player_df[['Total (5v5 Net)']])
     else:
         st.info("No data available for charts.")
 
