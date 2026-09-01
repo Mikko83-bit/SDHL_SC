@@ -5,7 +5,6 @@ import plotly.express as px
 st.set_page_config(page_title="Scoring Chances Analysis", layout="wide")
 st.title("🏒 Scoring Chances Team & Players Analysis")
 
-# 1. Älykäs datan lukeminen (huomioi Excelin sep=-rivin)
 @st.cache_data
 def load_data():
     with open("hockey_tag_data.csv", "r", encoding="utf-8") as f:
@@ -13,11 +12,12 @@ def load_data():
     skip = 1 if first_line.startswith("sep=") else 0
     df = pd.read_csv("hockey_tag_data.csv", skiprows=skip, sep=None, engine='python')
     
-    outcome_cols = [
+    # Varmistetaan numeeriset arvot
+    all_possible_cols = [
         "Goal for", "Chance for", "Goal for PP", "Chance for PP",
         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"
     ]
-    for col in outcome_cols:
+    for col in all_possible_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
@@ -25,18 +25,18 @@ def load_data():
 
 df = load_data()
 
-# 2. Sivuvalikon suodattimet
+# Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 games = st.sidebar.multiselect("Select Game", options=df["Game"].unique(), default=df["Game"].unique())
 periods = st.sidebar.multiselect("Select Period", options=df["Period"].unique(), default=df["Period"].unique())
 
 filtered_df = df[(df["Game"].isin(games)) & (df["Period"].isin(periods))]
 
-# 3. Yhteenveto / Avainmittarit (KPIs)
-total_gf = int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum())
-total_ga = int(filtered_df["Goal agn"].sum() + filtered_df["Goal agn PP"].sum())
-total_cf = int(filtered_df["Chance for"].sum() + filtered_df["Chance for PP"].sum())
-total_ca = int(filtered_df["Chance agn"].sum() + filtered_df["Chance agn PP"].sum())
+# KPI-mittarit
+total_gf = int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum() if "Goal for PP" in filtered_df else filtered_df["Goal for"].sum())
+total_ga = int(filtered_df["Goal agn"].sum())
+total_cf = int(filtered_df["Chance for"].sum())
+total_ca = int(filtered_df["Chance agn"].sum())
 total_net = (total_gf + total_cf) - (total_ga + total_ca)
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -48,7 +48,6 @@ col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
-# 4. Välilehdet (Määritellään tab1, tab2, tab3, tab4)
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Scoring Chances Team", 
     "👤 Scoring Chances Players", 
@@ -58,38 +57,48 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     st.subheader("Team Statistics by Descriptor")
-    desc_summary = filtered_df.groupby("Descriptor")[
-        ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"]
-    ].sum()
+    numeric_cols = filtered_df.select_dtypes(include=['number']).columns.tolist()
+    numeric_cols = [c for c in numeric_cols if c not in ["Game", "Period"]]
+    desc_summary = filtered_df.groupby("Descriptor")[numeric_cols].sum()
     st.dataframe(desc_summary, use_container_width=True)
 
 with tab2:
-    st.subheader("Player Statistics by Outcome Columns")
+    st.subheader("Player Statistics by Role (For / Involved)")
     
-    outcome_cols = [
-        "Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-        "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"
-    ]
+    # Määritellään haettavat stat-tyypit
+    base_metrics = ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
+                    "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
     
     all_players = pd.unique(filtered_df[['Player 1', 'Player 2', 'Player 3']].values.ravel())
-    players_list = [p for p in all_players if pd.notna(p) and str(p).strip() != '']
+    players_list = [p for p in all_players if pd.notna(p) and str(p).strip() != '' and str(p).strip() != 'nan']
     
     player_rows = []
     for p in players_list:
-        row_data = {'Player': p}
-        p_mask = (filtered_df['Player 1'] == p) | (filtered_df['Player 2'] == p) | (filtered_df['Player 3'] == p)
-        p_df = filtered_df[p_mask]
+        p_str = str(p).strip()
+        row_data = {'Player': p_str}
         
-        for col in outcome_cols:
-            row_data[col] = int(p_df[col].sum())
-            
-        row_data['Total (5v5 Net)'] = (row_data['Goal for'] + row_data['Chance for']) - (row_data['Goal agn'] + row_data['Chance agn'])
+        # 1. Kun pelaaja on Player 1 (Omat teot)
+        df_p1 = filtered_df[filtered_df['Player 1'].astype(str).str.strip() == p_str]
+        
+        # 2. Kun pelaaja on Player 2 tai 3 (Mukana / INV)
+        df_inv = filtered_df[
+            (filtered_df['Player 2'].astype(str).str.strip() == p_str) | 
+            (filtered_df['Player 3'].astype(str).str.strip() == p_str)
+        ]
+        
+        for metric in base_metrics:
+            if metric in filtered_df.columns:
+                # Pääasiallinen arvo (Player 1)
+                row_data[metric] = int(df_p1[metric].sum())
+                # Mukanaoloarvo (Player 2 & 3) -> tallennetaan INV-sarakkeena
+                row_data[f"{metric} INV"] = int(df_inv[metric].sum())
+                
         player_rows.append(row_data)
         
     player_df = pd.DataFrame(player_rows)
     if not player_df.empty:
-        player_df = player_df.set_index('Player').sort_values(by='Total (5v5 Net)', ascending=False)
+        sort_col = "Goal for" if "Goal for" in player_df.columns else player_df.columns[1]
+        player_df = player_df.set_index('Player').sort_values(by=sort_col, ascending=False)
         st.dataframe(player_df, use_container_width=True)
     else:
         st.info("No player data available.")
@@ -111,32 +120,32 @@ with tab3:
     team_df = filtered_df.copy()
     team_df["Category"] = team_df["Descriptor"].apply(get_category)
     
-    team_summary = team_df.groupby("Category")[
-        ["Goal for", "Chance for", "Goal agn", "Chance agn"]
-    ].sum().reset_index()
-    
-    team_summary["For"] = team_summary["Goal for"] + team_summary["Chance for"]
-    team_summary["Against"] = team_summary["Goal agn"] + team_summary["Chance agn"]
-    
-    plot_data = pd.melt(
-        team_summary, 
-        id_vars=["Category"], 
-        value_vars=["For", "Against"],
-        var_name="Type", 
-        value_name="Count"
-    )
-    
-    fig = px.bar(
-        plot_data, 
-        x="Category", 
-        y="Count", 
-        color="Type", 
-        barmode="group",
-        color_discrete_map={"For": "#1f77b4", "Against": "#d62728"}
-    )
-    fig.update_layout(xaxis_title="Category", yaxis_title="Total (Goals + Chances)")
-    
-    st.plotly_chart(fig, use_container_width=True)
+    if "Goal for" in team_df.columns and "Chance for" in team_df.columns:
+        team_df["For"] = team_df["Goal for"] + team_df["Chance for"]
+        team_df["Against"] = team_df["Goal agn"] + team_df["Chance agn"]
+        
+        team_summary = team_df.groupby("Category")[["For", "Against"]].sum().reset_index()
+        
+        plot_data = pd.melt(
+            team_summary, 
+            id_vars=["Category"], 
+            value_vars=["For", "Against"],
+            var_name="Type", 
+            value_name="Count"
+        )
+        
+        fig = px.bar(
+            plot_data, 
+            x="Category", 
+            y="Count", 
+            color="Type", 
+            barmode="group",
+            color_discrete_map={"For": "#1f77b4", "Against": "#d62728"}
+        )
+        fig.update_layout(xaxis_title="Category", yaxis_title="Total (Goals + Chances)")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Tarvittavia sarakkeita ei löydy kaavion piirtämiseen.")
 
 with tab4:
     st.subheader("Filtered Raw Data")
