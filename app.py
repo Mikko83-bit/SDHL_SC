@@ -56,29 +56,12 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("Team Statistics by Category (OZP / Rush / Takeaway)")
-    
-    def get_category(desc):
-        d = str(desc).lower()
-        if "ozp" in d:
-            return "OZP"
-        elif "rush" in d:
-            return "Rush"
-        elif "takeaway" in d:
-            return "Takeaway"
-        else:
-            return "Other"
-            
-    team_df = filtered_df.copy()
-    team_df["Category"] = team_df["Descriptor"].apply(get_category)
-    
-    team_summary = team_df.groupby("Category")[
+    st.subheader("Team Statistics by Descriptor")
+    desc_summary = filtered_df.groupby("Descriptor")[
         ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
+         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"]
     ].sum()
-    
-    team_summary["Total (Net)"] = (team_summary["Goal for"] + team_summary["Chance for"]) - (team_summary["Goal agn"] + team_summary["Chance agn"])
-    st.dataframe(team_summary, use_container_width=True)
+    st.dataframe(desc_summary, use_container_width=True)
 
 with tab2:
     st.subheader("Player Statistics by Outcome Columns")
@@ -111,12 +94,33 @@ with tab2:
         st.info("No player data available.")
 
 with tab3:
-    st.subheader("Visualizations & Performance Charts")
-    if not player_df.empty:
-        st.markdown("### Player Net Performance (5v5 Net)")
-        st.bar_chart(player_df[['Total (5v5 Net)']])
-    else:
-        st.info("No data available for charts.")
+    st.subheader("Team Statistics by Category (OZP / Rush / Takeaway)")
+    
+    def get_category(desc):
+        d = str(desc).lower()
+        if "ozp" in d:
+            return "OZP"
+        elif "rush" in d:
+            return "Rush"
+        elif "takeaway" in d:
+            return "Takeaway"
+        else:
+            return "Other"
+            
+    team_df = filtered_df.copy()
+    team_df["Category"] = team_df["Descriptor"].apply(get_category)
+    
+    team_summary = team_df.groupby("Category")[
+        ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
+         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
+    ].sum()
+    
+    team_summary["Total (Net)"] = (team_summary["Goal for"] + team_summary["Chance for"]) - (team_summary["Goal agn"] + team_summary["Chance agn"])
+    
+    st.dataframe(team_summary, use_container_width=True)
+    
+    st.markdown("### Category Net Performance")
+    st.bar_chart(team_summary[['Total (Net)']])
 
 with tab4:
     st.subheader("Filtered Raw Data")
