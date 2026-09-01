@@ -31,12 +31,18 @@ periods = st.sidebar.multiselect("Select Period", options=df["Period"].unique(),
 
 filtered_df = df[(df["Game"].isin(games)) & (df["Period"].isin(periods))]
 
-# 3. Yhteenveto / Avainmittarit (KPIs)
+# 3. Yhteenveto / Avainmittarit (KPIs: 4 saraketta)
+total_gf = int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum())
+total_ga = int(filtered_df["Goal agn"].sum() + filtered_df["Goal agn PP"].sum())
+total_cf = int(filtered_df["Chance for"].sum() + filtered_df["Chance for PP"].sum())
+total_ca = int(filtered_df["Chance agn"].sum() + filtered_df["Chance agn PP"].sum())
+total_net = (total_gf + total_cf) - (total_ga + total_ca)
+
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Goals For", int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum()))
-col2.metric("Goals Against", int(filtered_df["Goal agn"].sum() + filtered_df["Goal agn PP"].sum()))
-col3.metric("Scoring Chances For", int(filtered_df["Chance for"].sum() + filtered_df["Chance for PP"].sum()))
-col4.metric("Turnovers", int(filtered_df["Turnover"].sum()))
+col1.metric("Goals For", total_gf)
+col2.metric("Goals Against", total_ga)
+col3.metric("Scoring Chances For", total_cf)
+col4.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
@@ -71,7 +77,7 @@ with tab2:
         for col in outcome_cols:
             row_data[col] = int(p_df[col].sum())
             
-        # Total / Net 5v5 laskenta: (Goal for + Chance for) - (Goal agn + Chance agn)
+        # Total / Net laskenta: (Goal for + Chance for) - (Goal agn + Chance agn)
         row_data['Total (5v5 Net)'] = (row_data['Goal for'] + row_data['Chance for']) - (row_data['Goal agn'] + row_data['Chance agn'])
         
         player_rows.append(row_data)
