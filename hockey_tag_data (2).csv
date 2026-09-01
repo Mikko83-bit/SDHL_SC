@@ -1,0 +1,28 @@
+Descriptor,Game,Period,Player 1,Player 2,Player 3,Goal for,Chance for,Goal for PP,Chance for PP,Goal agn,Chance agn,Goal agn PP,Chance agn PP,Turnover
+Rush equal,1,1,81,14,,,,,,,1,,,
+Rush equal,1,1,13,,,,,,,,1,,,
+Takeaway NZ,1,1,81,,,,,,,,1,,,1
+OZP 1 area shot,1,2,18,,,,,,,,1,,,
+OZP pass across slot,1,2,9,,,,,,,,1,,,
+OZP pass across slot,1,2,13,,,,,,,,1,,,
+Rush Odd-man,1,2,9,,,,,,,,1,,,
+Rush + rb,1,2,18,,,,,,,,1,,,
+OZP 1 area shot,1,2,44,,,,,,,,1,,,
+Rush equal,1,2,13,,,,,,,,1,,,
+Takeaway OZ,1,2,9,,,,,,,,1,,,1
+Rush equal,1,3,42,,,,,,,,1,,,1
+OZP 1 area shot,1,3,72,,,,,,,,1,,,
+Faceoff,1,3,8,,,,,,,,1,,,
+Takeaway DZ,1,3,71,,,,,,,,1,,,1
+OZP rebound,1,3,8,,,,,,,,1,,,
+Takeaway OZ,1,1,23,71,27,,1,,,,,,,
+Rush equal,1,1,42,18,,,1,,,,,,,
+OZP rebound,1,1,13,9,,,1,,,,,,,
+Rush under,1,2,23,71,,,1,,,,,,,
+OZP 1 area shot,1,2,14,,,,1,,,,,,,
+Rush under,1,2,9,71,,,1,,,,,,,
+Rush breakaway,1,3,27,71,,,1,,,,,,,
+Rush under,1,3,39,13,,,1,,,,,,,
+Faceoff,1,3,27,71,23,1,,,,,,,,
+OZP pass across slot,1,3,71,27,,1,,,,,,,,
+PP rebound,1,3,0,,,,,,,,,1,,
