@@ -94,7 +94,7 @@ with tab2:
         st.info("No player data available.")
 
 with tab3:
-    st.subheader("Team Statistics by Category (OZP / Rush / Takeaway)")
+    st.subheader("Team Performance: For vs Against by Category")
     
     def get_category(desc):
         d = str(desc).lower()
@@ -111,16 +111,16 @@ with tab3:
     team_df["Category"] = team_df["Descriptor"].apply(get_category)
     
     team_summary = team_df.groupby("Category")[
-        ["Goal for", "Chance for", "Goal for PP", "Chance for PP", 
-         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP"]
+        ["Goal for", "Chance for", "Goal agn", "Chance agn"]
     ].sum()
     
-    team_summary["Total (Net)"] = (team_summary["Goal for"] + team_summary["Chance for"]) - (team_summary["Goal agn"] + team_summary["Chance agn"])
+    # Lasketaan yhteismitat vertailua varten
+    chart_data = pd.DataFrame({
+        "For (Goals + Chances)": team_summary["Goal for"] + team_summary["Chance for"],
+        "Against (Goals + Chances)": team_summary["Goal agn"] + team_summary["Chance agn"]
+    })
     
-    st.dataframe(team_summary, use_container_width=True)
-    
-    st.markdown("### Category Net Performance")
-    st.bar_chart(team_summary[['Total (Net)']])
+    st.bar_chart(chart_data)
 
 with tab4:
     st.subheader("Filtered Raw Data")
