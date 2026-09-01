@@ -31,7 +31,7 @@ periods = st.sidebar.multiselect("Select Period", options=df["Period"].unique(),
 
 filtered_df = df[(df["Game"].isin(games)) & (df["Period"].isin(periods))]
 
-# 3. Yhteenveto / Avainmittarit (5 saraketta: Goals For, Goals Against, Scoring Chances For, Chances Against, Total Net)
+# 3. Yhteenveto / Avainmittarit (KPIs)
 total_gf = int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum())
 total_ga = int(filtered_df["Goal agn"].sum() + filtered_df["Goal agn PP"].sum())
 total_cf = int(filtered_df["Chance for"].sum() + filtered_df["Chance for PP"].sum())
@@ -47,8 +47,13 @@ col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
-# 4. Välilehdet
-tab1, tab2, tab3 = st.tabs(["📊 Scoring Chances Team", "👤 Scoring Chances Players", "📄 Raw Data"])
+# 4. Välilehdet (Lisätty Visuals-välilehti)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Scoring Chances Team", 
+    "👤 Scoring Chances Players", 
+    "📈 Visuals", 
+    "📄 Raw Data"
+])
 
 with tab1:
     st.subheader("Team Statistics by Descriptor")
@@ -78,9 +83,7 @@ with tab2:
         for col in outcome_cols:
             row_data[col] = int(p_df[col].sum())
             
-        # Total / Net laskenta: (Goal for + Chance for) - (Goal agn + Chance agn)
         row_data['Total (5v5 Net)'] = (row_data['Goal for'] + row_data['Chance for']) - (row_data['Goal agn'] + row_data['Chance agn'])
-        
         player_rows.append(row_data)
         
     player_df = pd.DataFrame(player_rows)
@@ -91,5 +94,16 @@ with tab2:
         st.info("No player data available.")
 
 with tab3:
+    st.subheader("Visualizations & Performance Charts")
+    
+    if not player_df.empty:
+        st.markdown("### Player Net Performance (5v5 Net)")
+        # Piirretään pylväskaavio pelaajien nettotuloksista
+        net_chart_data = player_df[['Total (5v5 Net)']]
+        st.bar_chart(net_chart_data)
+    else:
+        st.info("No data available for charts.")
+
+with tab4:
     st.subheader("Filtered Raw Data")
     st.dataframe(filtered_df, use_container_width=True)
