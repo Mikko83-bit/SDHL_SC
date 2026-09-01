@@ -40,7 +40,7 @@ col4.metric("Turnovers", int(filtered_df["Turnover"].sum()))
 
 st.markdown("---")
 
-# 4. Välilehdet (Määritellään ENNEN tab-lohkoja)
+# 4. Välilehdet
 tab1, tab2, tab3 = st.tabs(["📊 Scoring Chances Team", "👤 Scoring Chances Players", "📄 Raw Data"])
 
 with tab1:
@@ -52,35 +52,33 @@ with tab1:
     st.dataframe(desc_summary, use_container_width=True)
 
 with tab2:
-    st.subheader("Player Statistics by Role (P1 = Scorer/Receiver, P2/P3 = Creators)")
+    st.subheader("Player Statistics by Outcome Columns")
+    
+    outcome_cols = [
+        "Goal for", "Chance for", "Goal for PP", "Chance for PP", 
+        "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"
+    ]
     
     all_players = pd.unique(filtered_df[['Player 1', 'Player 2', 'Player 3']].values.ravel())
     players_list = [p for p in all_players if pd.notna(p) and str(p).strip() != '']
     
     player_rows = []
     for p in players_list:
-        goals_scored = filtered_df[(filtered_df['Player 1'] == p) & (filtered_df['Goal for'] == 1)].shape[0]
-        chances_rcv = filtered_df[(filtered_df['Player 1'] == p) & (filtered_df['Chance for'] == 1)].shape[0]
-        turnovers = filtered_df[(filtered_df['Player 1'] == p) & (filtered_df['Turnover'] == 1)].shape[0]
-        goals_agn_p1 = filtered_df[(filtered_df['Player 1'] == p) & (filtered_df['Goal agn'] == 1)].shape[0]
+        row_data = {'Player': p}
+        p_mask = (filtered_df['Player 1'] == p) | (filtered_df['Player 2'] == p) | (filtered_df['Player 3'] == p)
+        p_df = filtered_df[p_mask]
         
-        goals_created = filtered_df[((filtered_df['Player 2'] == p) | (filtered_df['Player 3'] == p)) & (filtered_df['Goal for'] == 1)].shape[0]
-        chances_created = filtered_df[((filtered_df['Player 2'] == p) | (filtered_df['Player 3'] == p)) & (filtered_df['Chance for'] == 1)].shape[0]
+        for col in outcome_cols:
+            row_data[col] = int(p_df[col].sum())
+            
+        # Total / Net 5v5 laskenta: (Goal for + Chance for) - (Goal agn + Chance agn)
+        row_data['Total (5v5 Net)'] = (row_data['Goal for'] + row_data['Chance for']) - (row_data['Goal agn'] + row_data['Chance agn'])
         
-        player_rows.append({
-            'Player': p,
-            'Goals (P1)': goals_scored,
-            'Assists (P2/P3)': goals_created,
-            'Points': goals_scored + goals_created,
-            'Chances For (P1)': chances_rcv,
-            'Chances Created (P2/P3)': chances_created,
-            'Turnovers (P1)': turnovers,
-            'Goal Agst Error (P1)': goals_agn_p1
-        })
+        player_rows.append(row_data)
         
     player_df = pd.DataFrame(player_rows)
     if not player_df.empty:
-        player_df = player_df.set_index('Player').sort_values(by='Points', ascending=False)
+        player_df = player_df.set_index('Player').sort_values(by='Total (5v5 Net)', ascending=False)
         st.dataframe(player_df, use_container_width=True)
     else:
         st.info("No player data available.")
