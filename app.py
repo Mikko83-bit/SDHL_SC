@@ -31,18 +31,19 @@ periods = st.sidebar.multiselect("Select Period", options=df["Period"].unique(),
 
 filtered_df = df[(df["Game"].isin(games)) & (df["Period"].isin(periods))]
 
-# 3. Yhteenveto / Avainmittarit (KPIs: 4 saraketta)
+# 3. Yhteenveto / Avainmittarit (5 saraketta: Goals For, Goals Against, Scoring Chances For, Chances Against, Total Net)
 total_gf = int(filtered_df["Goal for"].sum() + filtered_df["Goal for PP"].sum())
 total_ga = int(filtered_df["Goal agn"].sum() + filtered_df["Goal agn PP"].sum())
 total_cf = int(filtered_df["Chance for"].sum() + filtered_df["Chance for PP"].sum())
 total_ca = int(filtered_df["Chance agn"].sum() + filtered_df["Chance agn PP"].sum())
 total_net = (total_gf + total_cf) - (total_ga + total_ca)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Goals For", total_gf)
 col2.metric("Goals Against", total_ga)
 col3.metric("Scoring Chances For", total_cf)
-col4.metric("Total (Net)", total_net)
+col4.metric("Chances Against", total_ca)
+col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
