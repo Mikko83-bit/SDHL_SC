@@ -15,7 +15,14 @@ def load_data():
     # Poistetaan sarakkeiden nimistä ylimääräiset välilyönnit
     df.columns = df.columns.astype(str).str.strip()
     
-    # Täytetään kaikki mahdolliset numeeriset sarakkeet nollilla
+    # Siivotaan pelaajasarakkeet: poistetaan desimaalit jos niitä syntyy, ja muutetaan merkkijonoiksi
+    for player_col in ['Player 1', 'Player 2', 'Player 3']:
+        if player_col in df.columns:
+            df[player_col] = pd.to_numeric(df[player_col], errors='coerce')
+            df[player_col] = df[player_col].fillna(-1).astype(int).astype(str)
+            df.loc[df[player_col] == '-1', player_col] = ''
+            
+    # Täytetään numeeriset sarakkeet nollilla
     numeric_cols = [
         "Goal for", "Chance for", "Goal for PP", "Chance for PP",
         "Goal agn", "Chance agn", "Goal agn PP", "Chance agn PP", "Turnover"
@@ -83,18 +90,16 @@ with tab2:
         for p in players_list:
             p_str = str(p).strip()
             
-            # Roolit tehtyihin maaleihin / paikkoihin
-            df_p1 = filtered_df[filtered_df['Player 1'].astype(str).str.strip() == p_str]
+            # Roolit: Player 1 = pääasiallinen tekijä, Player 2 & 3 = mukana (INV)
+            df_p1 = filtered_df[filtered_df['Player 1'] == p_str]
             df_inv = filtered_df[
-                (filtered_df['Player 2'].astype(str).str.strip() == p_str) | 
-                (filtered_df['Player 3'].astype(str).str.strip() == p_str)
+                (filtered_df['Player 2'] == p_str) | 
+                (filtered_df['Player 3'] == p_str)
             ]
-            
-            # Oma pää (kaikki kentällä olijat / Player 1 raakadatassa)
             df_agn = filtered_df[
-                (filtered_df['Player 1'].astype(str).str.strip() == p_str) | 
-                (filtered_df['Player 2'].astype(str).str.strip() == p_str) | 
-                (filtered_df['Player 3'].astype(str).str.strip() == p_str)
+                (filtered_df['Player 1'] == p_str) | 
+                (filtered_df['Player 2'] == p_str) | 
+                (filtered_df['Player 3'] == p_str)
             ]
             
             row_data = {
