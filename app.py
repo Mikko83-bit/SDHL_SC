@@ -32,15 +32,29 @@ def load_data():
 
 players_df, team_df = load_data()
 
+# Määritellään kategoria-apufunktio Team-datalle
+def classify_descriptor(desc):
+    d = str(desc).lower()
+    if 'oz' in d or 'turnover oz' in d:
+        return 'OZ'
+    elif 'rush' in d:
+        return 'Rush'
+    elif 'ta' in d:
+        return 'TA'
+    else:
+        return 'Others'
+
+team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
+
 all_games = sorted(list(set(players_df['Game'].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist()))) if 'Game' in players_df.columns else []
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
-all_descriptors = sorted(team_df['Descriptor'].dropna().unique().tolist()) if 'Descriptor' in team_df.columns else []
+all_categories = ['OZ', 'Rush', 'TA', 'Others']
 
 # Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
+selected_categories = st.sidebar.multiselect("Select Category (OZ / Rush / TA / Others)", options=all_categories, default=all_categories)
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
-selected_descriptors = st.sidebar.multiselect("Select Descriptor", options=all_descriptors, default=all_descriptors)
 
 # Suodatetaan data
 filtered_players = players_df.copy()
@@ -52,8 +66,8 @@ if 'Number' in filtered_players.columns and selected_players:
 filtered_team = team_df.copy()
 if 'Game' in filtered_team.columns and selected_games:
     filtered_team = filtered_team[filtered_team['Game'].isin(selected_games)]
-if 'Descriptor' in filtered_team.columns and selected_descriptors:
-    filtered_team = filtered_team[filtered_team['Descriptor'].isin(selected_descriptors)]
+if 'Category' in filtered_team.columns and selected_categories:
+    filtered_team = filtered_team[filtered_team['Category'].isin(selected_categories)]
 
 # KPI-mittarit Team-datasta
 total_gf = int(filtered_team['Goal For'].sum() + filtered_team['PP goal'].sum()) if 'Goal For' in filtered_team.columns else 0
@@ -79,11 +93,11 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("Team Statistics by Descriptor")
+    st.subheader("Team Statistics by Category & Descriptor")
     if not filtered_team.empty:
         num_cols = filtered_team.select_dtypes(include=['number']).columns.tolist()
         num_cols = [c for c in num_cols if c != "Game"]
-        team_summary = filtered_team.groupby("Descriptor")[num_cols].sum()
+        team_summary = filtered_team.groupby(["Category", "Descriptor"])[num_cols].sum()
         st.dataframe(team_summary, use_container_width=True)
     else:
         st.info("No team data available for selected filters.")
@@ -102,15 +116,15 @@ with tab2:
         st.info("No player data available for selected filters.")
 
 with tab3:
-    st.subheader("Team Performance Overview")
+    st.subheader("Category Performance Overview")
     if not filtered_team.empty:
-        chart_data = filtered_team.groupby("Descriptor")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
+        chart_data = filtered_team.groupby("Category")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
         chart_data["For Total"] = chart_data["Goal For"] + chart_data["Chance For"]
         chart_data["Against Total"] = chart_data["Goal Against"] + chart_data["Chance Against"]
         
         plot_df = pd.melt(
             chart_data, 
-            id_vars=["Descriptor"], 
+            id_vars=["Category"], 
             value_vars=["For Total", "Against Total"],
             var_name="Type", 
             value_name="Count"
@@ -118,13 +132,13 @@ with tab3:
         
         fig = px.bar(
             plot_df, 
-            x="Descriptor", 
+            x="Category", 
             y="Count", 
             color="Type", 
             barmode="group",
             color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"}
         )
-        fig.update_layout(xaxis_title="Descriptor", yaxis_title="Total Count")
+        fig.update_layout(xaxis_title="Category", yaxis_title="Total Count")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Ei dataa kaavion piirtämiseen.")
@@ -135,4 +149,3 @@ with tab4:
     st.dataframe(filtered_players, use_container_width=True)
     st.markdown("### Team Sheet")
     st.dataframe(filtered_team, use_container_width=True)
-    
