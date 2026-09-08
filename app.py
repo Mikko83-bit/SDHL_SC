@@ -10,25 +10,20 @@ def load_data():
     excel_path = "SDHL 2026-2027 scoring chances.xlsx"
     xls = pd.ExcelFile(excel_path)
     
-    # Luetaan molemmat sivut
     players_df = pd.read_excel(xls, sheet_name="Players")
     team_df = pd.read_excel(xls, sheet_name="Team")
     
-    # Poistetaan sarakkeiden nimistä ylimääräiset välilyönnit
     players_df.columns = players_df.columns.astype(str).str.strip()
     team_df.columns = team_df.columns.astype(str).str.strip()
     
-    # Siivotaan pelaajanumero (muutetaan merkkijonoksi ilman .0 desimaaleja)
     if 'Number' in players_df.columns:
         players_df['Number'] = pd.to_numeric(players_df['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
         players_df.loc[players_df['Number'] == '-1', 'Number'] = ''
         
-    # Varmistetaan numeeriset arvot Players-taulukossa
-    p_num_cols = [c for c in players_df.columns if c != 'Number' and c != 'Game']
+    p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game']]
     for col in p_num_cols:
         players_df[col] = pd.to_numeric(players_df[col], errors='coerce').fillna(0)
         
-    # Varmistetaan numeeriset arvot Team-taulukossa
     t_num_cols = [c for c in team_df.columns if c not in ['Descriptor', 'Game']]
     for col in t_num_cols:
         team_df[col] = pd.to_numeric(team_df[col], errors='coerce').fillna(0)
@@ -37,16 +32,28 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Haetaan kaikki pelit molemmista taulukoista valintaa varten
-all_games = sorted(list(set(players_df['Game'].unique().tolist() + team_df['Game'].unique().tolist()))) if 'Game' in players_df.columns else []
+all_games = sorted(list(set(players_df['Game'].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist()))) if 'Game' in players_df.columns else []
+all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
+all_descriptors = sorted(team_df['Descriptor'].dropna().unique().tolist()) if 'Descriptor' in team_df.columns else []
 
 # Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
+selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
+selected_descriptors = st.sidebar.multiselect("Select Descriptor", options=all_descriptors, default=all_descriptors)
 
-# Suodatetaan data valintojen mukaan
-filtered_players = players_df[players_df['Game'].isin(selected_games)] if 'Game' in players_df.columns and selected_games else players_df
-filtered_team = team_df[team_df['Game'].isin(selected_games)] if 'Game' in team_df.columns and selected_games else team_df
+# Suodatetaan data
+filtered_players = players_df.copy()
+if 'Game' in filtered_players.columns and selected_games:
+    filtered_players = filtered_players[filtered_players['Game'].isin(selected_games)]
+if 'Number' in filtered_players.columns and selected_players:
+    filtered_players = filtered_players[filtered_players['Number'].isin(selected_players)]
+
+filtered_team = team_df.copy()
+if 'Game' in filtered_team.columns and selected_games:
+    filtered_team = filtered_team[filtered_team['Game'].isin(selected_games)]
+if 'Descriptor' in filtered_team.columns and selected_descriptors:
+    filtered_team = filtered_team[filtered_team['Descriptor'].isin(selected_descriptors)]
 
 # KPI-mittarit Team-datasta
 total_gf = int(filtered_team['Goal For'].sum() + filtered_team['PP goal'].sum()) if 'Goal For' in filtered_team.columns else 0
@@ -74,33 +81,29 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Team Statistics by Descriptor")
     if not filtered_team.empty:
-        # Ryhmitellään Descriptorin mukaan ja lasketaan summat
         num_cols = filtered_team.select_dtypes(include=['number']).columns.tolist()
         num_cols = [c for c in num_cols if c != "Game"]
         team_summary = filtered_team.groupby("Descriptor")[num_cols].sum()
         st.dataframe(team_summary, use_container_width=True)
     else:
-        st.info("No team data available for selected games.")
+        st.info("No team data available for selected filters.")
 
 with tab2:
     st.subheader("Player Statistics")
     if not filtered_players.empty:
-        # Ryhmitellään pelaajanumeron mukaan (jos sama pelaaja esiintyy useammassa pelissä)
         p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c != "Game"]
         player_summary = filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
         
-        # Järjestetään tehtyjen maalien mukaan laskevasti
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
         player_summary = player_summary.set_index('Number').sort_values(by=sort_col, ascending=False)
         
         st.dataframe(player_summary, use_container_width=True)
     else:
-        st.info("No player data available for selected games.")
+        st.info("No player data available for selected filters.")
 
 with tab3:
     st.subheader("Team Performance Overview")
     if not filtered_team.empty:
-        # Yhteenveto kaaviota varten
         chart_data = filtered_team.groupby("Descriptor")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
         chart_data["For Total"] = chart_data["Goal For"] + chart_data["Chance For"]
         chart_data["Against Total"] = chart_data["Goal Against"] + chart_data["Chance Against"]
@@ -132,3 +135,4 @@ with tab4:
     st.dataframe(filtered_players, use_container_width=True)
     st.markdown("### Team Sheet")
     st.dataframe(filtered_team, use_container_width=True)
+    
