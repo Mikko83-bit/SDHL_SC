@@ -49,7 +49,7 @@ def classify_descriptor(desc):
     elif 'ta' in d:
         return 'TA'
     else:
-        return 'Others' # Sisältää empty net, PK, Faceoff jne.
+        return 'Others' # empty net, PK, Faceoff jne.
 
 team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
@@ -159,7 +159,11 @@ with tab3:
             barmode="group",
             color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"}
         )
-        fig.update_layout(xaxis_title="Category", yaxis_title="Total Count")
+        
+        # Numerot pylväiden päälle
+        fig.update_traces(texttemplate='%{y}', textposition='outside')
+        fig.update_layout(xaxis_title="Category", yaxis_title="Total Count", uniformtext_minsize=8, uniformtext_mode='hide')
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Ei riittävästi dataa kaavion piirtämiseen.")
@@ -170,4 +174,3 @@ with tab4:
     st.dataframe(filtered_players, use_container_width=True)
     st.markdown("### Team Sheet")
     st.dataframe(filtered_team, use_container_width=True)
-    
