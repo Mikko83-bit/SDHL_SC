@@ -35,11 +35,13 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Kategorisointi Team-datalle (erotellaan erät ja varsinaiset pelitilanteet)
+# Kategorisointi sääntöjesi mukaan
 def classify_descriptor(desc):
     d = str(desc).lower()
     if any(p in d for p in ['period 1', 'period 2', 'period 3', 'ot']):
         return 'Periods'
+    elif 'pp' in d:
+        return 'PP'
     elif 'oz' in d:
         return 'OZ'
     elif 'rush' in d:
@@ -47,7 +49,7 @@ def classify_descriptor(desc):
     elif 'ta' in d:
         return 'TA'
     else:
-        return 'Others'
+        return 'Others' # Sisältää empty net, PK, Faceoff jne.
 
 team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
@@ -55,12 +57,12 @@ team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 game_col_p = 'Game ' if 'Game ' in players_df.columns else 'Game'
 all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist())))
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
-all_categories = ['OZ', 'Rush', 'TA', 'Others', 'Periods']
+all_categories = ['OZ', 'TA', 'Rush', 'PP', 'Others', 'Periods']
 
 # Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
-selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'Rush', 'TA', 'Others'])
+selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
 # Suodatetaan data
@@ -76,7 +78,7 @@ if 'Game' in filtered_team.columns and selected_games:
 if 'Category' in filtered_team.columns and selected_categories:
     filtered_team = filtered_team[filtered_team['Category'].isin(selected_categories)]
 
-# KPI-mittarit lasketaan fiksusti vain "Periods"-riveistä (tai jos ei valittu, niin pelitilanteista) jos halutaan oikea ottelutulos
+# KPI-mittarit lasketaan fiksusti vain "Periods"-riveistä (ottelutulos)
 kpi_source = filtered_team[filtered_team['Category'] == 'Periods'] if not filtered_team[filtered_team['Category'] == 'Periods'].empty else filtered_team
 
 total_gf = int(kpi_source['Goal For'].sum() + kpi_source['PP goal'].sum()) if 'Goal For' in kpi_source.columns else 0
@@ -117,7 +119,6 @@ with tab2:
         p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c not in ["Game", "Game "]]
         player_summary = filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
         
-        # Lasketaan pyydetty Total-sarake: Goal For + Goal For inv + Chance For + Chance For inv - Goal Against - Chance Against
         gf = player_summary['Goal For'] if 'Goal For' in player_summary.columns else 0
         gfi = player_summary['Goal For inv'] if 'Goal For inv' in player_summary.columns else 0
         cf = player_summary['Chance For'] if 'Chance For' in player_summary.columns else 0
@@ -169,3 +170,4 @@ with tab4:
     st.dataframe(filtered_players, use_container_width=True)
     st.markdown("### Team Sheet")
     st.dataframe(filtered_team, use_container_width=True)
+    
