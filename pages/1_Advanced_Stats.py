@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="LHF Advanced Stats", layout="wide")
-st.title("⭐ LHF Dam - Advanced Player Statistics")
+st.title("⭐ LHF SDHL - Advanced Player Statistics")
 
 @st.cache_data
 def load_advanced_data():
