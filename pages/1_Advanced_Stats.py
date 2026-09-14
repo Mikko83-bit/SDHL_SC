@@ -64,24 +64,25 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # Etsitään oikeat sarakkeet joustavammin
-        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower() or ('xg' in c.lower() and 'opp' in c.lower())), None)
-        corsi_pct_col = next((c for c in summary_df.columns if 'corsi' in c.lower() and '%' in c.lower()), None)
-        battles_col = next((c for c in summary_df.columns if 'puck battles' in c.lower() or 'battles' in c.lower()), None)
+        # Oikeat sarakkeet suoraan kuvasta
+        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
+        corsi_pct_col = next((c for c in summary_df.columns if 'corsi for, %' in c.lower()), None)
+        battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
         
-        # Apufunktio Z-scoren laskemiseen turvallisesti
+        # Varmistetaan että Corsi % on varmasti numeerinen
+        if corsi_pct_col:
+            summary_df[corsi_pct_col] = pd.to_numeric(summary_df[corsi_pct_col], errors='coerce')
+        
         def get_z_score(series):
             if series is None or series.std() == 0 or pd.isna(series.std()):
                 return pd.Series(0, index=series.index)
             return (series - series.mean()) / series.std()
 
-        # Lasketaan Z-scoret komponenteille (hanskataan myös puuttuvat sarakkeet nollilla)
         z_xg = get_z_score(summary_df[net_xg_col]) if net_xg_col else pd.Series(0, index=summary_df.index)
         z_sc = get_z_score(summary_df['Scoring Chances Total']) if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
         z_corsi = get_z_score(summary_df[corsi_pct_col]) if corsi_pct_col else pd.Series(0, index=summary_df.index)
         z_battles = get_z_score(summary_df[battles_col]) if battles_col else pd.Series(0, index=summary_df.index)
         
-        # Lievemmät ja tasapainoisemmat painotukset Z-scoreille (yhteensä skaala pysyy maltillisena)
         summary_df['Comp_NetxG'] = z_xg * 1.5
         summary_df['Comp_SC'] = z_sc * 1.2
         summary_df['Comp_Corsi'] = z_corsi * 1.0
@@ -116,8 +117,8 @@ if not df.empty:
             Tilastot on standardoitu (Z-score), jotta eri osa-alueet ovat vertailukelpoisia keskenään:
             * **Net xG (Paino 1.5)**
             * **Scoring Chances Total (Paino 1.2)**
-            * **Corsi % (Paino 1.0)**
-            * **Voitetut kaksinkamppailut (Paino 0.8)**
+            * **CORSI for, % (Paino 1.0)**
+            * **Voitetut puck battles won (Paino 0.8)**
             """)
             
             st.markdown("---")
