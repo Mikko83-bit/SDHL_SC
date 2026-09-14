@@ -34,10 +34,26 @@ players_df, team_df = load_data()
 
 def classify_descriptor(desc):
     d = str(desc).lower().strip()
-    # Vain tarkat erät ja OT menevät Periods-kategoriaan
+    
+    # 1. Erät (Periods)
     if d in ['period 1', 'period 2', 'period 3', 'ot']:
         return 'Periods'
-    elif 'oz' in d:
+    
+    # 2. Turnovers (tarkistetaan ennen OZ/TA:ta, jotta osumat menevät oikein)
+    elif 'turnover' in d:
+        return 'Turnovers'
+    
+    # 3. TA (ta oz, ta dz, ta nz)
+    elif d.startswith('ta ') or ' ta ' in d or d.startswith('ta'):
+        # Varmistetaan että kyseessä on nimenomaan TA-alkuinen (esim. ta oz, ta dz, ta nz)
+        if any(zone in d for zone in ['oz', 'dz', 'nz']):
+            return 'TA'
+        # Jos pelkkä 'ta' tai muu TA-alkuinen
+        if d.replace(' ', '').startswith('ta'):
+            return 'TA'
+            
+    # 4. Muut kategoriat
+    if 'oz' in d:
         return 'OZ'
     elif 'pp' in d:
         return 'PP'
@@ -53,11 +69,12 @@ team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 game_col_p = 'Game ' if 'Game ' in players_df.columns else 'Game'
 all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist())))
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
-all_categories = ['OZ', 'TA', 'Rush', 'PP', 'Others', 'Periods']
+all_categories = sorted(team_df['Category'].dropna().unique().tolist())
 
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
-selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
+default_cats = [c for c in ['OZ', 'TA', 'Turnovers', 'Rush', 'PP', 'Others'] if c in all_categories]
+selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=default_cats)
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
 all_metric_options = [
