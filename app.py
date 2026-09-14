@@ -121,41 +121,13 @@ with tab2:
         player_summary['Total'] = (gf + gfi + cf + cfi) - (ga + ca)
         
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
-        player_summary = player_summary.set_index('Number').sort_values(by=sort_col, ascending=False).reset_index()
+        player_summary = player_summary.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
         
-        # Muunnetaan HTML-taulukoksi, jossa sarakkeilla on pakotettu leveys
-        html_table = player_summary.to_html(classes='table table-striped', index=False, escape=False)
-        styled_html = f"""
-        <style>
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                color: white;
-            }}
-            th {{
-                background-color: #262730;
-                color: white;
-                text-align: center !important;
-                padding: 12px 8px !important;
-                min-width: 110px !important;
-                font-size: 14px;
-                border-bottom: 2px solid #46485f;
-            }}
-            td {{
-                text-align: center !important;
-                padding: 10px 8px !important;
-                border-bottom: 1px solid #363945;
-                font-size: 14px;
-            }}
-            tr:hover {{
-                background-color: #2a2d3d;
-            }}
-        </style>
-        <div style="overflow-x: auto;">
-            {html_table}
-        </div>
-        """
-        st.markdown(styled_html, unsafe_allow_html=True)
+        # Käytetään Streamlitin omaa dataframea, jotta sarakkeiden leveyksiä voi säätää siististi
+        column_config = {col: st.column_config.NumberColumn(col, width="medium") for col in player_summary.columns}
+        column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+        
+        st.dataframe(player_summary, use_container_width=True, column_config=column_config, hide_index=True)
     else:
         st.info("No player data available for selected filters.")
 
