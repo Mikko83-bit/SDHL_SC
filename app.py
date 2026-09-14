@@ -59,7 +59,6 @@ selected_games = st.sidebar.multiselect("Select Game", options=all_games, defaul
 selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
-# Suodatin Team metrics / vertailua varten
 all_metric_options = [
     'Goal For', 'Goal For inv', 'Chance For', 'Chance For inv', 
     'PP goal', 'PP goal inv', 'PP chance', 'PP chance inv', 
@@ -111,10 +110,8 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Team Statistics by Category & Descriptor")
     if not filtered_team.empty:
-        # Otetaan mukaan Category, Descriptor ja valitut sarakkeet
         base_cols = ["Category", "Descriptor"]
         available_selected = [c for c in selected_team_metrics if c in filtered_team.columns]
-        group_cols = base_cols + [c for c in available_selected if c not in base_cols]
         
         num_cols = filtered_team.select_dtypes(include=['number']).columns.tolist()
         num_cols = [c for c in num_cols if c != "Game"]
@@ -155,12 +152,16 @@ with tab2:
         st.info("No player data available for selected filters.")
 
 with tab3:
-    st.subheader("Category Performance Overview")
+    st.subheader("Category Performance Overview (Based on Selected Metrics)")
     chart_source = filtered_team[filtered_team['Category'] != 'Periods']
-    if not chart_source.empty:
-        chart_data = chart_source.groupby("Category")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
-        chart_data["For Total"] = chart_data["Goal For"] + chart_data["Chance For"]
-        chart_data["Against Total"] = chart_data["Goal Against"] + chart_data["Chance Against"]
+    if not chart_source.empty and selected_team_metrics:
+        # Jaetaan valitut metriikat For- ja Against-ryhmiin suodattimen perusteella
+        for_metrics = [m for m in selected_team_metrics if 'against' not in m.lower() and 'ag' not in m.lower()]
+        ag_metrics = [m for m in selected_team_metrics if 'against' in m.lower() or 'ag' in m.lower()]
+        
+        chart_data = chart_source.groupby("Category")[selected_team_metrics].sum().reset_index()
+        chart_data["For Total"] = chart_data[for_metrics].sum(axis=1) if for_metrics else 0
+        chart_data["Against Total"] = chart_data[ag_metrics].sum(axis=1) if ag_metrics else 0
         
         plot_df = pd.melt(
             chart_data, 
@@ -184,7 +185,7 @@ with tab3:
         
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Ei riittävästi dataa kaavion piirtämiseen.")
+        st.warning("Valitse vähintään yksi metriikka sivupalkista kaavion näyttämiseksi.")
 
 with tab4:
     st.subheader("Raw Data Sheets")
