@@ -16,14 +16,17 @@ def load_data():
     players_df.columns = players_df.columns.astype(str).str.strip()
     team_df.columns = team_df.columns.astype(str).str.strip()
     
+    # Siivotaan pelaajanumero
     if 'Number' in players_df.columns:
         players_df['Number'] = pd.to_numeric(players_df['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
         players_df.loc[players_df['Number'] == '-1', 'Number'] = ''
         
-    p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game']]
+    # Numeeriset arvot pelaajille
+    p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game ']]
     for col in p_num_cols:
         players_df[col] = pd.to_numeric(players_df[col], errors='coerce').fillna(0)
         
+    # Numeeriset arvot joukkueelle
     t_num_cols = [c for c in team_df.columns if c not in ['Descriptor', 'Game']]
     for col in t_num_cols:
         team_df[col] = pd.to_numeric(team_df[col], errors='coerce').fillna(0)
@@ -32,10 +35,12 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Määritellään kategoria-apufunktio Team-datalle
+# Kategorisointi Team-datalle (erotellaan erät ja varsinaiset pelitilanteet)
 def classify_descriptor(desc):
     d = str(desc).lower()
-    if 'oz' in d or 'turnover oz' in d:
+    if any(p in d for p in ['period 1', 'period 2', 'period 3', 'ot']):
+        return 'Periods'
+    elif 'oz' in d:
         return 'OZ'
     elif 'rush' in d:
         return 'Rush'
@@ -46,20 +51,22 @@ def classify_descriptor(desc):
 
 team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
-all_games = sorted(list(set(players_df['Game'].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist()))) if 'Game' in players_df.columns else []
+# Haetaan pelit
+game_col_p = 'Game ' if 'Game ' in players_df.columns else 'Game'
+all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist())))
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
-all_categories = ['OZ', 'Rush', 'TA', 'Others']
+all_categories = ['OZ', 'Rush', 'TA', 'Others', 'Periods']
 
 # Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
-selected_categories = st.sidebar.multiselect("Select Category (OZ / Rush / TA / Others)", options=all_categories, default=all_categories)
+selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'Rush', 'TA', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
 # Suodatetaan data
 filtered_players = players_df.copy()
-if 'Game' in filtered_players.columns and selected_games:
-    filtered_players = filtered_players[filtered_players['Game'].isin(selected_games)]
+if game_col_p in filtered_players.columns and selected_games:
+    filtered_players = filtered_players[filtered_players[game_col_p].isin(selected_games)]
 if 'Number' in filtered_players.columns and selected_players:
     filtered_players = filtered_players[filtered_players['Number'].isin(selected_players)]
 
@@ -69,11 +76,13 @@ if 'Game' in filtered_team.columns and selected_games:
 if 'Category' in filtered_team.columns and selected_categories:
     filtered_team = filtered_team[filtered_team['Category'].isin(selected_categories)]
 
-# KPI-mittarit Team-datasta
-total_gf = int(filtered_team['Goal For'].sum() + filtered_team['PP goal'].sum()) if 'Goal For' in filtered_team.columns else 0
-total_ga = int(filtered_team['Goal Against'].sum() + filtered_team['PP goal ag'].sum()) if 'Goal Against' in filtered_team.columns else 0
-total_cf = int(filtered_team['Chance For'].sum() + filtered_team['PP chance'].sum()) if 'Chance For' in filtered_team.columns else 0
-total_ca = int(filtered_team['Chance Against'].sum() + filtered_team['PP chance ag'].sum()) if 'Chance Against' in filtered_team.columns else 0
+# KPI-mittarit lasketaan fiksusti vain "Periods"-riveistä (tai jos ei valittu, niin pelitilanteista) jos halutaan oikea ottelutulos
+kpi_source = filtered_team[filtered_team['Category'] == 'Periods'] if not filtered_team[filtered_team['Category'] == 'Periods'].empty else filtered_team
+
+total_gf = int(kpi_source['Goal For'].sum() + kpi_source['PP goal'].sum()) if 'Goal For' in kpi_source.columns else 0
+total_ga = int(kpi_source['Goal Against'].sum() + kpi_source['PP goal ag'].sum()) if 'Goal Against' in kpi_source.columns else 0
+total_cf = int(kpi_source['Chance For'].sum() + kpi_source['PP chance'].sum()) if 'Chance For' in kpi_source.columns else 0
+total_ca = int(kpi_source['Chance Against'].sum() + kpi_source['PP chance ag'].sum()) if 'Chance Against' in kpi_source.columns else 0
 total_net = (total_gf + total_cf) - (total_ga + total_ca)
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -103,10 +112,20 @@ with tab1:
         st.info("No team data available for selected filters.")
 
 with tab2:
-    st.subheader("Player Statistics")
+    st.subheader("Player Statistics with Total Score")
     if not filtered_players.empty:
-        p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c != "Game"]
+        p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c not in ["Game", "Game "]]
         player_summary = filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
+        
+        # Lasketaan pyydetty Total-sarake: Goal For + Goal For inv + Chance For + Chance For inv - Goal Against - Chance Against
+        gf = player_summary['Goal For'] if 'Goal For' in player_summary.columns else 0
+        gfi = player_summary['Goal For inv'] if 'Goal For inv' in player_summary.columns else 0
+        cf = player_summary['Chance For'] if 'Chance For' in player_summary.columns else 0
+        cfi = player_summary['Chance For inv'] if 'Chance For inv' in player_summary.columns else 0
+        ga = player_summary['Goal Against'] if 'Goal Against' in player_summary.columns else 0
+        ca = player_summary['Chance Against'] if 'Chance Against' in player_summary.columns else 0
+        
+        player_summary['Total'] = (gf + gfi + cf + cfi) - (ga + ca)
         
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
         player_summary = player_summary.set_index('Number').sort_values(by=sort_col, ascending=False)
@@ -117,8 +136,9 @@ with tab2:
 
 with tab3:
     st.subheader("Category Performance Overview")
-    if not filtered_team.empty:
-        chart_data = filtered_team.groupby("Category")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
+    chart_source = filtered_team[filtered_team['Category'] != 'Periods']
+    if not chart_source.empty:
+        chart_data = chart_source.groupby("Category")[["Goal For", "Chance For", "Goal Against", "Chance Against"]].sum().reset_index()
         chart_data["For Total"] = chart_data["Goal For"] + chart_data["Chance For"]
         chart_data["Against Total"] = chart_data["Goal Against"] + chart_data["Chance Against"]
         
@@ -141,7 +161,7 @@ with tab3:
         fig.update_layout(xaxis_title="Category", yaxis_title="Total Count")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Ei dataa kaavion piirtämiseen.")
+        st.warning("Ei riittävästi dataa kaavion piirtämiseen.")
 
 with tab4:
     st.subheader("Raw Data Sheets")
