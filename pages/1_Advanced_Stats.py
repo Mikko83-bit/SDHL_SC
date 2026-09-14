@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 
 st.set_page_config(page_title="LHF Advanced Stats & Impact Score", layout="wide")
 st.title("⭐ LHF Dam - Advanced Player Statistics & Impact Analysis")
@@ -65,17 +64,31 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
+        # Etsitään oikeat sarakkeet joustavammin
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower() or ('xg' in c.lower() and 'opp' in c.lower())), None)
-        corsi_pct_col = next((c for c in summary_df.columns if 'corsi for, %' in c.lower()), None)
-        battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
+        corsi_pct_col = next((c for c in summary_df.columns if 'corsi' in c.lower() and '%' in c.lower()), None)
+        battles_col = next((c for c in summary_df.columns if 'puck battles' in c.lower() or 'battles' in c.lower()), None)
         
-        summary_df['Comp_NetxG'] = summary_df[net_xg_col] * 8 if net_xg_col else 0
-        summary_df['Comp_Corsi'] = (summary_df[corsi_pct_col] - 50) * 0.15 if corsi_pct_col else 0
-        summary_df['Comp_Battles'] = summary_df[battles_col] * 0.05 if battles_col else 0
-        summary_df['Comp_SC'] = summary_df['Scoring Chances Total'] * 0.5 if 'Scoring Chances Total' in summary_df.columns else 0
+        # Apufunktio Z-scoren laskemiseen turvallisesti
+        def get_z_score(series):
+            if series is None or series.std() == 0 or pd.isna(series.std()):
+                return pd.Series(0, index=series.index)
+            return (series - series.mean()) / series.std()
+
+        # Lasketaan Z-scoret komponenteille (hanskataan myös puuttuvat sarakkeet nollilla)
+        z_xg = get_z_score(summary_df[net_xg_col]) if net_xg_col else pd.Series(0, index=summary_df.index)
+        z_sc = get_z_score(summary_df['Scoring Chances Total']) if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
+        z_corsi = get_z_score(summary_df[corsi_pct_col]) if corsi_pct_col else pd.Series(0, index=summary_df.index)
+        z_battles = get_z_score(summary_df[battles_col]) if battles_col else pd.Series(0, index=summary_df.index)
+        
+        # Lievemmät ja tasapainoisemmat painotukset Z-scoreille (yhteensä skaala pysyy maltillisena)
+        summary_df['Comp_NetxG'] = z_xg * 1.5
+        summary_df['Comp_SC'] = z_sc * 1.2
+        summary_df['Comp_Corsi'] = z_corsi * 1.0
+        summary_df['Comp_Battles'] = z_battles * 0.8
         
         summary_df['5v5 Impact Score'] = round(
-            summary_df['Comp_NetxG'] + summary_df['Comp_Corsi'] + summary_df['Comp_Battles'] + summary_df['Comp_SC'], 2
+            summary_df['Comp_NetxG'] + summary_df['Comp_SC'] + summary_df['Comp_Corsi'] + summary_df['Comp_Battles'], 2
         )
         
         summary_df = summary_df.sort_values(by='5v5 Impact Score', ascending=False).reset_index(drop=True)
@@ -98,28 +111,27 @@ if not df.empty:
             st.dataframe(display_df[cols], use_container_width=True, hide_index=True)
 
         with tab_breakdown:
-            st.subheader("Mistä pelaajien 5v5 Impact Score koostuu?")
+            st.subheader("Mistä pelaajien 5v5 Impact Score koostuu? (Z-score standardoitu)")
             st.markdown("""
-            Kaava laskee yhteen seuraavat osa-alueet:
-            * **Net xG × 0.8** (Odotettujen maalien erotus jäällä)
-            * **Scoring Chances Total × 0.5** (Maalipaikkojen nettotulos)
-            * **(Corsi% - 50) × 0.15** (Kiekonhallinnan suhde)
-            * **Voitetut kaksinkamppailut × 0.05** (Fyysinen panos)
+            Tilastot on standardoitu (Z-score), jotta eri osa-alueet ovat vertailukelpoisia keskenään:
+            * **Net xG (Paino 1.5)**
+            * **Scoring Chances Total (Paino 1.2)**
+            * **Corsi % (Paino 1.0)**
+            * **Voitetut kaksinkamppailut (Paino 0.8)**
             """)
             
             st.markdown("---")
             st.subheader("Pelaajakohtainen komponenttitaulukko")
             
-            # Luodaan siisti taulukko, jossa näkyvät suoraan pelaajan osapisteet
             breakdown_table_cols = [shirt_col, player_name_col, '5v5 Impact Score', 'Comp_NetxG', 'Comp_SC', 'Comp_Corsi', 'Comp_Battles']
             breakdown_table_cols = [c for c in breakdown_table_cols if c and c in summary_df.columns]
             
             breakdown_display = summary_df[breakdown_table_cols].copy()
             breakdown_display = breakdown_display.rename(columns={
-                'Comp_NetxG': 'Net xG (Pisteet)',
-                'Comp_SC': 'Scoring Chances (Pisteet)',
-                'Comp_Corsi': 'Corsi % (Pisteet)',
-                'Comp_Battles': 'Kamppailut (Pisteet)'
+                'Comp_NetxG': 'Net xG (Z-pisteet)',
+                'Comp_SC': 'Scoring Chances (Z-pisteet)',
+                'Comp_Corsi': 'Corsi % (Z-pisteet)',
+                'Comp_Battles': 'Kamppailut (Z-pisteet)'
             })
             
             st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
