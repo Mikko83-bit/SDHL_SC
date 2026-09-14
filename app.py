@@ -59,14 +59,15 @@ selected_games = st.sidebar.multiselect("Select Game", options=all_games, defaul
 selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
+# Suodatin Team metrics / vertailua varten
 all_metric_options = [
     'Goal For', 'Goal For inv', 'Chance For', 'Chance For inv', 
     'PP goal', 'PP goal inv', 'PP chance', 'PP chance inv', 
     'Goal Against', 'Chance Against', 'PP goal ag', 'PP chance ag'
 ]
-valid_metric_defaults = [m for m in all_metric_options if m in players_df.columns]
-selected_metrics = st.sidebar.multiselect(
-    "Select Metrics for Total", 
+valid_metric_defaults = [m for m in all_metric_options if m in team_df.columns]
+selected_team_metrics = st.sidebar.multiselect(
+    "Select Team Metrics to Compare", 
     options=valid_metric_defaults, 
     default=valid_metric_defaults
 )
@@ -110,10 +111,21 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Team Statistics by Category & Descriptor")
     if not filtered_team.empty:
+        # Otetaan mukaan Category, Descriptor ja valitut sarakkeet
+        base_cols = ["Category", "Descriptor"]
+        available_selected = [c for c in selected_team_metrics if c in filtered_team.columns]
+        group_cols = base_cols + [c for c in available_selected if c not in base_cols]
+        
         num_cols = filtered_team.select_dtypes(include=['number']).columns.tolist()
         num_cols = [c for c in num_cols if c != "Game"]
-        team_summary = filtered_team.groupby(["Category", "Descriptor"])[num_cols].sum()
-        st.dataframe(team_summary, use_container_width=True)
+        
+        team_summary = filtered_team.groupby(base_cols)[num_cols].sum().reset_index()
+        
+        if available_selected:
+            cols_to_show = base_cols + available_selected
+            team_summary = team_summary[[c for c in cols_to_show if c in team_summary.columns]]
+            
+        st.dataframe(team_summary, use_container_width=True, hide_index=True)
     else:
         st.info("No team data available for selected filters.")
 
@@ -123,13 +135,14 @@ with tab2:
         p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c not in ["Game", "Game "]]
         player_summary = filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
         
-        positive_options = [m for m in selected_metrics if 'against' not in m.lower() and 'ag' not in m.lower()]
-        negative_options = [m for m in selected_metrics if 'against' in m.lower() or 'ag' in m.lower()]
+        gf = player_summary['Goal For'] if 'Goal For' in player_summary.columns else 0
+        gfi = player_summary['Goal For inv'] if 'Goal For inv' in player_summary.columns else 0
+        cf = player_summary['Chance For'] if 'Chance For' in player_summary.columns else 0
+        cfi = player_summary['Chance For inv'] if 'Chance For inv' in player_summary.columns else 0
+        ga = player_summary['Goal Against'] if 'Goal Against' in player_summary.columns else 0
+        ca = player_summary['Chance Against'] if 'Chance Against' in player_summary.columns else 0
         
-        pos_sum = sum(player_summary[m] for m in positive_options if m in player_summary.columns) if positive_options else 0
-        neg_sum = sum(player_summary[m] for m in negative_options if m in player_summary.columns) if negative_options else 0
-        
-        player_summary['Total'] = pos_sum - neg_sum
+        player_summary['Total'] = (gf + gfi + cf + cfi) - (ga + ca)
         
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
         player_summary = player_summary.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
