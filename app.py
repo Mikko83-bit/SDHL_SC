@@ -35,7 +35,7 @@ if not df.empty:
         "Select Event Types / Metrics", 
         options=available_events, 
         default=available_events
-    ]
+    )
 
     st.sidebar.markdown("---")
 
