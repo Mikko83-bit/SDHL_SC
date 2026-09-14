@@ -6,11 +6,6 @@ st.title("⭐ LHF Dam - Advanced Player Statistics & Impact Analysis")
 
 @st.cache_data
 def load_all_data():
-    adv_path = "LHF Dam season 2026-2027.xlsx"
-    xls_adv = pd.ExcelFile(adv_path)
-    df_adv = pd.read_excel(xls_adv, sheet_name=xls_adv.sheet_names[0])
-    df_adv.columns = df_adv.columns.astype(str).str.strip()
-    
     sc_path = "SDHL 2026-2027 scoring chances.xlsx"
     xls_sc = pd.ExcelFile(xls_sc_path := sc_path) # pylint: disable=undefined-variable
     xls_sc = pd.ExcelFile(sc_path)
