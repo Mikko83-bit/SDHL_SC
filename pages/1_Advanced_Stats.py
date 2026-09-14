@@ -64,14 +64,14 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # Oikeat sarakkeet suoraan kuvasta
+        # Haetaan oikeat sarakkeet tarkasti
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        corsi_pct_col = next((c for c in summary_df.columns if 'corsi for, %' in c.lower()), None)
+        # Haetaan täsmällinen "CORSI" otsikko (ei prosentti)
+        corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
         battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
         
-        # Varmistetaan että Corsi % on varmasti numeerinen
-        if corsi_pct_col:
-            summary_df[corsi_pct_col] = pd.to_numeric(summary_df[corsi_pct_col], errors='coerce')
+        if corsi_col:
+            summary_df[corsi_col] = pd.to_numeric(summary_df[corsi_col], errors='coerce')
         
         def get_z_score(series):
             if series is None or series.std() == 0 or pd.isna(series.std()):
@@ -80,7 +80,7 @@ if not df.empty:
 
         z_xg = get_z_score(summary_df[net_xg_col]) if net_xg_col else pd.Series(0, index=summary_df.index)
         z_sc = get_z_score(summary_df['Scoring Chances Total']) if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
-        z_corsi = get_z_score(summary_df[corsi_pct_col]) if corsi_pct_col else pd.Series(0, index=summary_df.index)
+        z_corsi = get_z_score(summary_df[corsi_col]) if corsi_col else pd.Series(0, index=summary_df.index)
         z_battles = get_z_score(summary_df[battles_col]) if battles_col else pd.Series(0, index=summary_df.index)
         
         summary_df['Comp_NetxG'] = z_xg * 1.5
@@ -117,7 +117,7 @@ if not df.empty:
             Tilastot on standardoitu (Z-score), jotta eri osa-alueet ovat vertailukelpoisia keskenään:
             * **Net xG (Paino 1.5)**
             * **Scoring Chances Total (Paino 1.2)**
-            * **CORSI for, % (Paino 1.0)**
+            * **CORSI netto (Paino 1.0)**
             * **Voitetut puck battles won (Paino 0.8)**
             """)
             
@@ -131,7 +131,7 @@ if not df.empty:
             breakdown_display = breakdown_display.rename(columns={
                 'Comp_NetxG': 'Net xG (Z-pisteet)',
                 'Comp_SC': 'Scoring Chances (Z-pisteet)',
-                'Comp_Corsi': 'Corsi % (Z-pisteet)',
+                'Comp_Corsi': 'CORSI (Z-pisteet)',
                 'Comp_Battles': 'Kamppailut (Z-pisteet)'
             })
             
