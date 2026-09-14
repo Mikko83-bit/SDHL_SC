@@ -26,10 +26,12 @@ if not df.empty:
         if selected_players:
             df = df[df[player_name_col].isin(selected_players)]
             
-    num_cols = df.select_dtypes(include=['number']).columns.tolist()
+    group_cols = [c for c in [shirt_col, player_name_col] if c]
     
-    if player_name_col and num_cols:
-        group_cols = [c for c in [shirt_col, player_name_col] if c]
+    # Otetaan numeeriset sarakkeet, mutta suljetaan ryhmittelysarakkeet pois laskennasta
+    num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in group_cols]
+    
+    if group_cols and num_cols:
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
     else:
