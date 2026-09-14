@@ -59,6 +59,18 @@ selected_games = st.sidebar.multiselect("Select Game", options=all_games, defaul
 selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
+all_metric_options = [
+    'Goal For', 'Goal For inv', 'Chance For', 'Chance For inv', 
+    'PP goal', 'PP goal inv', 'PP chance', 'PP chance inv', 
+    'Goal Against', 'Chance Against', 'PP goal ag', 'PP chance ag'
+]
+valid_metric_defaults = [m for m in all_metric_options if m in players_df.columns]
+selected_metrics = st.sidebar.multiselect(
+    "Select Metrics for Total", 
+    options=valid_metric_defaults, 
+    default=valid_metric_defaults
+)
+
 filtered_players = players_df.copy()
 if game_col_p in filtered_players.columns and selected_games:
     filtered_players = filtered_players[filtered_players[game_col_p].isin(selected_games)]
@@ -111,19 +123,17 @@ with tab2:
         p_num_cols = [c for c in filtered_players.select_dtypes(include=['number']).columns.tolist() if c not in ["Game", "Game "]]
         player_summary = filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
         
-        gf = player_summary['Goal For'] if 'Goal For' in player_summary.columns else 0
-        gfi = player_summary['Goal For inv'] if 'Goal For inv' in player_summary.columns else 0
-        cf = player_summary['Chance For'] if 'Chance For' in player_summary.columns else 0
-        cfi = player_summary['Chance For inv'] if 'Chance For inv' in player_summary.columns else 0
-        ga = player_summary['Goal Against'] if 'Goal Against' in player_summary.columns else 0
-        ca = player_summary['Chance Against'] if 'Chance Against' in player_summary.columns else 0
+        positive_options = [m for m in selected_metrics if 'against' not in m.lower() and 'ag' not in m.lower()]
+        negative_options = [m for m in selected_metrics if 'against' in m.lower() or 'ag' in m.lower()]
         
-        player_summary['Total'] = (gf + gfi + cf + cfi) - (ga + ca)
+        pos_sum = sum(player_summary[m] for m in positive_options if m in player_summary.columns) if positive_options else 0
+        neg_sum = sum(player_summary[m] for m in negative_options if m in player_summary.columns) if negative_options else 0
+        
+        player_summary['Total'] = pos_sum - neg_sum
         
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
         player_summary = player_summary.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
         
-        # Käytetään Streamlitin omaa dataframea, jotta sarakkeiden leveyksiä voi säätää siististi
         column_config = {col: st.column_config.NumberColumn(col, width="medium") for col in player_summary.columns}
         column_config["Number"] = st.column_config.TextColumn("Number", width="small")
         
