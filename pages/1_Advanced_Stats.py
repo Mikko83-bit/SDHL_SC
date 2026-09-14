@@ -64,9 +64,7 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # Haetaan oikeat sarakkeet tarkasti
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        # Haetaan täsmällinen "CORSI" otsikko (ei prosentti)
         corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
         battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
         
@@ -97,7 +95,7 @@ if not df.empty:
         tab_table, tab_breakdown = st.tabs(["📊 Advanced Player Stats", "⭐ 5v5 Impact Score Breakdown"])
 
         with tab_table:
-            st.subheader("Laaja tilastotaulukko")
+            st.subheader("Advanced Player Statistics")
             display_df = summary_df.drop(columns=[c for c in summary_df.columns if c.startswith('Comp_')])
             
             cols = list(display_df.columns)
@@ -112,32 +110,32 @@ if not df.empty:
             st.dataframe(display_df[cols], use_container_width=True, hide_index=True)
 
         with tab_breakdown:
-            st.subheader("Mistä pelaajien 5v5 Impact Score koostuu? (Z-score standardoitu)")
+            st.subheader("What makes up the 5v5 Impact Score? (Z-score standardized)")
             st.markdown("""
-            Tilastot on standardoitu (Z-score), jotta eri osa-alueet ovat vertailukelpoisia keskenään:
-            * **Net xG (Paino 1.5)**
-            * **Scoring Chances Total (Paino 1.2)**
-            * **CORSI netto (Paino 1.0)**
-            * **Voitetut puck battles won (Paino 0.8)**
+            Statistics are standardized (Z-score) to make different metrics directly comparable:
+            * **Net xG (Weight 1.5)**
+            * **Scoring Chances Total (Weight 1.2)**
+            * **CORSI Net (Weight 1.0)**
+            * **Puck Battles Won (Weight 0.8)**
             """)
             
             st.markdown("---")
-            st.subheader("Pelaajakohtainen komponenttitaulukko")
+            st.subheader("Player Component Breakdown")
             
             breakdown_table_cols = [shirt_col, player_name_col, '5v5 Impact Score', 'Comp_NetxG', 'Comp_SC', 'Comp_Corsi', 'Comp_Battles']
             breakdown_table_cols = [c for c in breakdown_table_cols if c and c in summary_df.columns]
             
             breakdown_display = summary_df[breakdown_table_cols].copy()
             breakdown_display = breakdown_display.rename(columns={
-                'Comp_NetxG': 'Net xG (Z-pisteet)',
-                'Comp_SC': 'Scoring Chances (Z-pisteet)',
-                'Comp_Corsi': 'CORSI (Z-pisteet)',
-                'Comp_Battles': 'Kamppailut (Z-pisteet)'
+                'Comp_NetxG': 'Net xG (Z-score)',
+                'Comp_SC': 'Scoring Chances (Z-score)',
+                'Comp_Corsi': 'CORSI (Z-score)',
+                'Comp_Battles': 'Battles Won (Z-score)'
             })
             
             st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
 
     else:
-        st.info("Ei löydetty sopivia sarakkeita laskentaan.")
+        st.info("No suitable columns found for calculations.")
 else:
-    st.info("Ei dataa ladattavissa.")
+    st.info("No data available.")
