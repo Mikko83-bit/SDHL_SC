@@ -33,13 +33,14 @@ def load_data():
 players_df, team_df = load_data()
 
 def classify_descriptor(desc):
-    d = str(desc).lower()
-    if any(p in d for p in ['period 1', 'period 2', 'period 3', 'ot']):
+    d = str(desc).lower().strip()
+    # Vain tarkat erät ja OT menevät Periods-kategoriaan
+    if d in ['period 1', 'period 2', 'period 3', 'ot']:
         return 'Periods'
-    elif 'pp' in d:
-        return 'PP'
     elif 'oz' in d:
         return 'OZ'
+    elif 'pp' in d:
+        return 'PP'
     elif 'rush' in d:
         return 'Rush'
     elif 'ta' in d:
@@ -155,7 +156,6 @@ with tab3:
     st.subheader("Category Performance Overview (Based on Selected Metrics)")
     chart_source = filtered_team[filtered_team['Category'] != 'Periods']
     if not chart_source.empty and selected_team_metrics:
-        # Jaetaan valitut metriikat For- ja Against-ryhmiin suodattimen perusteella
         for_metrics = [m for m in selected_team_metrics if 'against' not in m.lower() and 'ag' not in m.lower()]
         ag_metrics = [m for m in selected_team_metrics if 'against' in m.lower() or 'ag' in m.lower()]
         
