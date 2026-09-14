@@ -21,70 +21,64 @@ def load_all_data():
 df, players_sc_df = load_all_data()
 
 if not df.empty:
-    # --- KATEGORIA- JA DESCRIPTOR-SUODATTIMET (SIVUPALKKI) ---
-    st.sidebar.subheader("Filter Scoring Chances Data")
+    # --- PÄÄSIVUN SUODATTIMET (SIVUPALKKI) ---
+    st.sidebar.subheader("Filter Data by Situation")
     
-    cat_col = next((c for c in players_sc_df.columns if c.strip().lower() in ['category', 'cat']), None)
-    desc_col = next((c for c in players_sc_df.columns if c.strip().lower() in ['descriptor', 'desc']), None)
+    # Etsitään mahdolliset tilannesarakkeet päädatasta (esim. Category, Descriptor, Home/Away, Position)
+    cat_col = next((c for c in df.columns if c.strip().lower() in ['category', 'cat']), None)
+    desc_col = next((c for c in df.columns if c.strip().lower() in ['descriptor', 'desc']), None)
+    ha_col = next((c for c in df.columns if 'home' in c.lower() or 'away' in c.lower()), None)
+    pos_col = next((c for c in df.columns if 'position' in c.lower()), None)
     
-    filtered_sc_df = players_sc_df.copy()
-    
+    # 1. Kategoria-suodatin (esim. OZ, DZ, NZ)
     if cat_col:
-        categories = sorted(filtered_sc_df[cat_col].dropna().astype(str).unique().tolist())
+        categories = sorted(df[cat_col].dropna().astype(str).unique().tolist())
         selected_cats = st.sidebar.multiselect("Select Category", options=categories, default=categories)
         if selected_cats:
-            filtered_sc_df = filtered_sc_df[filtered_sc_df[cat_col].astype(str).isin(selected_cats)]
+            df = df[df[cat_col].astype(str).isin(selected_cats)]
             
+    # 2. Descriptor-suodatin (esim. maalitilanteet, chance for, goal for tyypit)
     if desc_col:
-        descriptors = sorted(filtered_sc_df[desc_col].dropna().astype(str).unique().tolist())
+        descriptors = sorted(df[desc_col].dropna().astype(str).unique().tolist())
         selected_descs = st.sidebar.multiselect("Select Descriptor", options=descriptors, default=descriptors)
         if selected_descs:
-            filtered_sc_df = filtered_sc_df[filtered_sc_df[desc_col].astype(str).isin(selected_descs)]
+            df = df[df[desc_col].astype(str).isin(selected_descs)]
+
+    # 3. Koti / Vieras -suodatin
+    if ha_col:
+        ha_opts = sorted(df[ha_col].dropna().astype(str).unique().tolist())
+        selected_ha = st.sidebar.multiselect("Home / Away", options=ha_opts, default=ha_opts)
+        if selected_ha:
+            df = df[df[ha_col].astype(str).isin(selected_ha)]
+
+    # 4. Pelipaikka-suodatin
+    if pos_col:
+        positions = sorted(df[pos_col].dropna().astype(str).unique().tolist())
+        selected_pos = st.sidebar.multiselect("Position", options=positions, default=positions)
+        if selected_pos:
+            df = df[df[pos_col].astype(str).isin(selected_pos)]
 
     st.sidebar.markdown("---")
 
-    # --- UUSI SUODATIN: MITKÄ SARAKKEET OTETAAN MUKAAN SUMMAAN ---
-    st.sidebar.subheader("Select Metrics for Scoring Chances Total")
-    
-    # Haetaan mahdolliset pisteytyssarakkeet kuvasta (Goal For, Chance For, PP goal jne.)
-    available_metric_options = [
-        'Goal For', 'Goal For inv', 'Chance For', 'Chance For inv', 
-        'PP goal', 'PP goal inv', 'PP chance', 'PP chance inv', 
-        'Goal Against', 'Chance Against', 'PP goal ag', 'PP chance ag'
-    ]
-    # Tarkistetaan mitkä näistä oikeasti löytyy datasta
-    valid_defaults = [m for m in available_metric_options if m in players_sc_df.columns]
-    
-    selected_metrics = st.sidebar.multiselect(
-        "Choose metrics to include in sum", 
-        options=valid_defaults, 
-        default=valid_defaults
-    )
-
-    sc_totals = None
-    sc_num_col = next((c for c in players_sc_df.columns if 'number' in c.lower() or c.strip() == 'Number'), None)
-    
-    if not filtered_sc_df.empty and sc_num_col:
-        p_num_cols = [c for c in filtered_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in [sc_num_col, "Game", "Game "]]
-        sc_summary = filtered_sc_df.groupby(sc_num_col)[p_num_cols].sum().reset_index()
-        
-        # Jaetaan plussiin ja miinuksiin sen mukaan mitä käyttäjä valitsi sivupalkissa
-        positive_options = [m for m in selected_metrics if 'against' not in m.lower() and 'ag' not in m.lower()]
-        negative_options = [m for m in selected_metrics if 'against' in m.lower() or 'ag' in m.lower()]
-        
-        pos_sum = sum(sc_summary[m] for m in positive_options if m in sc_summary.columns) if positive_options else 0
-        neg_sum = sum(sc_summary[m] for m in negative_options if m in sc_summary.columns) if negative_options else 0
-        
-        sc_summary['Scoring Chances Total'] = pos_sum - neg_sum
-        
-        sc_totals = sc_summary[[sc_num_col, 'Scoring Chances Total']].copy()
-        sc_totals.columns = ['Number', 'Scoring Chances Total']
-        sc_totals['Clean_Number'] = pd.to_numeric(sc_totals['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
-
-    # Pääpelaajien suodatus sivupalkista
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
+    
+    sc_totals = None
+    if not players_sc_df.empty and 'Number' in players_sc_df.columns:
+        p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
+        sc_summary = players_sc_df.groupby("Number")[p_num_cols].sum().reset_index()
+        
+        gf = sc_summary['Goal For'] if 'Goal For' in sc_summary.columns else 0
+        gfi = sc_summary['Goal For inv'] if 'Goal For inv' in sc_summary.columns else 0
+        cf = sc_summary['Chance For'] if 'Chance For' in sc_summary.columns else 0
+        cfi = sc_summary['Chance For inv'] if 'Chance For inv' in sc_summary.columns else 0
+        ga = sc_summary['Goal Against'] if 'Goal Against' in sc_summary.columns else 0
+        ca = sc_summary['Chance Against'] if 'Chance Against' in sc_summary.columns else 0
+        
+        sc_summary['Scoring Chances Total'] = (gf + gfi + cf + cfi) - (ga + ca)
+        sc_totals = sc_summary[['Number', 'Scoring Chances Total']].copy()
+        sc_totals['Clean_Number'] = pd.to_numeric(sc_totals['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
 
     if player_name_col:
         all_players = sorted(df[player_name_col].dropna().unique().tolist())
