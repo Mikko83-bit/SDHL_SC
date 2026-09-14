@@ -16,17 +16,14 @@ def load_data():
     players_df.columns = players_df.columns.astype(str).str.strip()
     team_df.columns = team_df.columns.astype(str).str.strip()
     
-    # Siivotaan pelaajanumero
     if 'Number' in players_df.columns:
         players_df['Number'] = pd.to_numeric(players_df['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
         players_df.loc[players_df['Number'] == '-1', 'Number'] = ''
         
-    # Numeeriset arvot pelaajille
     p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game ']]
     for col in p_num_cols:
         players_df[col] = pd.to_numeric(players_df[col], errors='coerce').fillna(0)
         
-    # Numeeriset arvot joukkueelle
     t_num_cols = [c for c in team_df.columns if c not in ['Descriptor', 'Game']]
     for col in t_num_cols:
         team_df[col] = pd.to_numeric(team_df[col], errors='coerce').fillna(0)
@@ -35,7 +32,6 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Kategorisointi sääntöjesi mukaan
 def classify_descriptor(desc):
     d = str(desc).lower()
     if any(p in d for p in ['period 1', 'period 2', 'period 3', 'ot']):
@@ -49,23 +45,20 @@ def classify_descriptor(desc):
     elif 'ta' in d:
         return 'TA'
     else:
-        return 'Others' # empty net, PK, Faceoff jne.
+        return 'Others'
 
 team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
-# Haetaan pelit
 game_col_p = 'Game ' if 'Game ' in players_df.columns else 'Game'
 all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist())))
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
 all_categories = ['OZ', 'TA', 'Rush', 'PP', 'Others', 'Periods']
 
-# Sivuvalikon suodattimet
 st.sidebar.header("Filters")
 selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
 selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=['OZ', 'TA', 'Rush', 'PP', 'Others'])
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
 
-# Suodatetaan data
 filtered_players = players_df.copy()
 if game_col_p in filtered_players.columns and selected_games:
     filtered_players = filtered_players[filtered_players[game_col_p].isin(selected_games)]
@@ -78,7 +71,6 @@ if 'Game' in filtered_team.columns and selected_games:
 if 'Category' in filtered_team.columns and selected_categories:
     filtered_team = filtered_team[filtered_team['Category'].isin(selected_categories)]
 
-# KPI-mittarit lasketaan fiksusti vain "Periods"-riveistä (ottelutulos)
 kpi_source = filtered_team[filtered_team['Category'] == 'Periods'] if not filtered_team[filtered_team['Category'] == 'Periods'].empty else filtered_team
 
 total_gf = int(kpi_source['Goal For'].sum() + kpi_source['PP goal'].sum()) if 'Goal For' in kpi_source.columns else 0
@@ -129,9 +121,41 @@ with tab2:
         player_summary['Total'] = (gf + gfi + cf + cfi) - (ga + ca)
         
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
-        player_summary = player_summary.set_index('Number').sort_values(by=sort_col, ascending=False)
+        player_summary = player_summary.set_index('Number').sort_values(by=sort_col, ascending=False).reset_index()
         
-        st.dataframe(player_summary, use_container_width=True)
+        # Muunnetaan HTML-taulukoksi, jossa sarakkeilla on pakotettu leveys
+        html_table = player_summary.to_html(classes='table table-striped', index=False, escape=False)
+        styled_html = f"""
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                color: white;
+            }}
+            th {{
+                background-color: #262730;
+                color: white;
+                text-align: center !important;
+                padding: 12px 8px !important;
+                min-width: 110px !important;
+                font-size: 14px;
+                border-bottom: 2px solid #46485f;
+            }}
+            td {{
+                text-align: center !important;
+                padding: 10px 8px !important;
+                border-bottom: 1px solid #363945;
+                font-size: 14px;
+            }}
+            tr:hover {{
+                background-color: #2a2d3d;
+            }}
+        </style>
+        <div style="overflow-x: auto;">
+            {html_table}
+        </div>
+        """
+        st.markdown(styled_html, unsafe_allow_html=True)
     else:
         st.info("No player data available for selected filters.")
 
@@ -160,7 +184,6 @@ with tab3:
             color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"}
         )
         
-        # Numerot pylväiden päälle
         fig.update_traces(texttemplate='%{y}', textposition='outside')
         fig.update_layout(xaxis_title="Category", yaxis_title="Total Count", uniformtext_minsize=8, uniformtext_mode='hide')
         
