@@ -26,10 +26,10 @@ if not df.empty:
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
     
-    # 1. Scoring Chances Total laskenta pelinumeron mukaan
+    # 1. Scoring Chances Total laskenta pelinumeron mukaan (korjattu tuplalisäysvirhe)
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
-        p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Game", "Game "]]
+        p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
         sc_summary = players_sc_df.groupby("Number")[p_num_cols].sum().reset_index()
         
         gf = sc_summary['Goal For'] if 'Goal For' in sc_summary.columns else 0
@@ -72,7 +72,7 @@ if not df.empty:
         corsi_pct_col = next((c for c in summary_df.columns if 'corsi for, %' in c.lower()), None)
         battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
         
-        # Lasketaan komponentit erikseen, jotta ne voidaan näyttää erittelyssä
+        # Lasketaan komponentit erikseen erittelyä varten
         summary_df['Comp_NetxG'] = summary_df[net_xg_col] * 8 if net_xg_col else 0
         summary_df['Comp_Corsi'] = (summary_df[corsi_pct_col] - 50) * 0.15 if corsi_pct_col else 0
         summary_df['Comp_Battles'] = summary_df[battles_col] * 0.05 if battles_col else 0
@@ -89,7 +89,6 @@ if not df.empty:
 
         with tab_table:
             st.subheader("Laaja tilastotaulukko")
-            # Siivotaan väliaikaiset komponenttisarakkeet pois perustaulukosta
             display_df = summary_df.drop(columns=[c for c in summary_df.columns if c.startswith('Comp_')])
             
             cols = list(display_df.columns)
@@ -109,11 +108,10 @@ if not df.empty:
             Kaava painottaa seuraavia osa-alueita:
             * **Net xG × 8** (Odotettujen maalien erotus jäällä)
             * **Scoring Chances Total × 0.5** (Maalipaikkojen nettotulos)
-            * **(Corsi% - 50) × 0.15** (Kiekonhallinnan suhde suhteessa tasakymppiin)
+            * **(Corsi% - 50) × 0.15** (Kiekonhallinnan suhde)
             * **Voitetut kaksinkamppailut × 0.05** (Fyysinen panos)
             """)
 
-            # Valitaan pelaaja tarkasteluun
             breakdown_player = st.selectbox("Valitse pelaaja tarkastellaksesi kaavan avausta:", options=summary_df[player_name_col].tolist())
             
             p_data = summary_df[summary_df[player_name_col] == breakdown_player].iloc[0]
@@ -125,7 +123,6 @@ if not df.empty:
                 st.markdown(f"**Pelatut pelit:** {p_data.get('Games Played', '-')}")
             
             with col_b:
-                # Näytetään komponenttien osuudet
                 breakdown_chart_data = pd.DataFrame({
                     "Komponentti": ["Net xG (x8)", "Scoring Chances (x0.5)", "Corsi % osuus", "Kaksinkamppailut"],
                     "Pisteet": [p_data['Comp_NetxG'], p_data['Comp_SC'], p_data['Comp_Corsi'], p_data['Comp_Battles']]
