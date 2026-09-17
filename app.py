@@ -20,11 +20,11 @@ def load_data():
         players_df['Number'] = pd.to_numeric(players_df['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
         players_df.loc[players_df['Number'] == '-1', 'Number'] = ''
         
-    p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game ']]
+    p_num_cols = [c for c in players_df.columns if c not in ['Number', 'Game ', 'Opponent', 'Date']]
     for col in p_num_cols:
         players_df[col] = pd.to_numeric(players_df[col], errors='coerce').fillna(0)
         
-    t_num_cols = [c for c in team_df.columns if c not in ['Descriptor', 'Game']]
+    t_num_cols = [c for c in team_df.columns if c not in ['Descriptor', 'Game', 'Opponent', 'Date']]
     for col in t_num_cols:
         team_df[col] = pd.to_numeric(team_df[col], errors='coerce').fillna(0)
         
@@ -34,25 +34,16 @@ players_df, team_df = load_data()
 
 def classify_descriptor(desc):
     d = str(desc).lower().strip()
-    
-    # 1. Erät (Periods)
     if d in ['period 1', 'period 2', 'period 3', 'ot']:
         return 'Periods'
-    
-    # 2. Turnovers (tarkistetaan ennen OZ/TA:ta, jotta osumat menevät oikein)
     elif 'turnover' in d:
         return 'Turnovers'
-    
-    # 3. TA (ta oz, ta dz, ta nz)
     elif d.startswith('ta ') or ' ta ' in d or d.startswith('ta'):
-        # Varmistetaan että kyseessä on nimenomaan TA-alkuinen (esim. ta oz, ta dz, ta nz)
         if any(zone in d for zone in ['oz', 'dz', 'nz']):
             return 'TA'
-        # Jos pelkkä 'ta' tai muu TA-alkuinen
         if d.replace(' ', '').startswith('ta'):
             return 'TA'
             
-    # 4. Muut kategoriat
     if 'oz' in d:
         return 'OZ'
     elif 'pp' in d:
@@ -66,13 +57,48 @@ def classify_descriptor(desc):
 
 team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
-game_col_p = 'Game ' if 'Game ' in players_df.columns else 'Game'
-all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist())))
+game_col_p = 'Game ' if 'Game ' in players_df.columns else ('Game' if 'Game' in players_df.columns else None)
+
+# Luodaan yhdistetty lista peleistä vastustajineen ja päivämäärineen suoraan datasta
+combined_df = pd.concat([
+    players_df[['Game ', 'Opponent', 'Date']].rename(columns={'Game ': 'Game'}) if 'Game ' in players_df.columns else pd.DataFrame(columns=['Game', 'Opponent', 'Date']),
+    team_df[['Game', 'Opponent', 'Date']] if {'Game', 'Opponent', 'Date'}.issubset(team_df.columns) else pd.DataFrame(columns=['Game', 'Opponent', 'Date'])
+]).drop_duplicates(subset=['Game']).dropna(subset=['Game'])
+
+combined_df = combined_df.sort_values(by='Game')
+
+# Rakennetaan näyttönimet ja kartoitus takaisin pelinumeroon
+game_options = []
+game_mapping = {}
+
+for _, row in combined_df.iterrows():
+    g_num = row['Game']
+    opp = row.get('Opponent', '')
+    date = row.get('Date', '')
+    
+    # Muotoillaan siisti teksti valikkoon
+    label = f"Game {g_num}"
+    if pd.notna(opp) and str(opp).strip() != '':
+        label += f" vs {opp}"
+    if pd.notna(date) and str(date).strip() != '':
+        label += f" ({date})"
+        
+    game_options.append(label)
+    game_mapping[label] = g_num
+
+if not game_options:
+    # Varakohdta jos sarakkeita ei löydy
+    all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist()))) if game_col_p else []
+    game_options = [f"Game {g}" for g in all_games]
+    game_mapping = {f"Game {g}": g for g in all_games}
+
 all_players = sorted([p for p in players_df['Number'].unique() if p != ''])
 all_categories = sorted(team_df['Category'].dropna().unique().tolist())
 
 st.sidebar.header("Filters")
-selected_games = st.sidebar.multiselect("Select Game", options=all_games, default=all_games)
+selected_labels = st.sidebar.multiselect("Select Game", options=game_options, default=game_options)
+selected_games = [game_mapping[label] for label in selected_labels if label in game_mapping]
+
 default_cats = [c for c in ['OZ', 'TA', 'Turnovers', 'Rush', 'PP', 'Others'] if c in all_categories]
 selected_categories = st.sidebar.multiselect("Select Category", options=all_categories, default=default_cats)
 selected_players = st.sidebar.multiselect("Select Player Number", options=all_players, default=all_players)
@@ -90,7 +116,7 @@ selected_team_metrics = st.sidebar.multiselect(
 )
 
 filtered_players = players_df.copy()
-if game_col_p in filtered_players.columns and selected_games:
+if game_col_p and selected_games:
     filtered_players = filtered_players[filtered_players[game_col_p].isin(selected_games)]
 if 'Number' in filtered_players.columns and selected_players:
     filtered_players = filtered_players[filtered_players['Number'].isin(selected_players)]
