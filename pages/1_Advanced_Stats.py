@@ -1,24 +1,30 @@
 import streamlit as st
 import pandas as pd
+import os
 
 st.set_page_config(page_title="LHF Advanced Stats & Impact Score", layout="wide")
 st.title("⭐ LHF Dam - Advanced Player Statistics & Impact Analysis")
 
+adv_path = "LHF Dam season 2026-2027.xlsx"
+sc_path = "SDHL 2026-2027 scoring chances.xlsx"
+
 @st.cache_data
-def load_all_data():
-    adv_path = "LHF Dam season 2026-2027.xlsx"
+def load_all_data(adv_mtime, sc_mtime):
     xls_adv = pd.ExcelFile(adv_path)
     df_adv = pd.read_excel(xls_adv, sheet_name=xls_adv.sheet_names[0])
     df_adv.columns = df_adv.columns.astype(str).str.strip()
     
-    sc_path = "SDHL 2026-2027 scoring chances.xlsx"
     xls_sc = pd.ExcelFile(sc_path)
     df_sc = pd.read_excel(xls_sc, sheet_name="Players")
     df_sc.columns = df_sc.columns.astype(str).str.strip()
     
     return df_adv, df_sc
 
-df, players_sc_df = load_all_data()
+# Haetaan tiedostojen viimeisimmät muokkausajat cache-päivitystä varten
+mtime_adv = os.path.getmtime(adv_path) if os.path.exists(adv_path) else 0
+mtime_sc = os.path.getmtime(sc_path) if os.path.exists(sc_path) else 0
+
+df, players_sc_df = load_all_data(mtime_adv, mtime_sc)
 
 if not df.empty:
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
