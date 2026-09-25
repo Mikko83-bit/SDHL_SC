@@ -95,11 +95,13 @@ if not df.empty:
             summary_df['Games Played'] = 1
             
         # Peliajan keskiarvo
-        if toi_col and 'TOI_Seconds' in summary_df.columns:
+        if toi_col and 'TOI_Seconds' in df.columns:
+            toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
+            summary_df = pd.merge(summary_df, toi_summary, on=group_cols, how='left')
             games_for_toi = summary_df['Games Played'] if 'Games Played' in summary_df.columns else 1
-            avg_sec = summary_df['TOI_Seconds'] / games_for_toi.replace(0, 1)
+            avg_sec = summary_df['Total_TOI_Sec'] / games_for_toi.replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
-            summary_df = summary_df.drop(columns=['TOI_Seconds'], errors='ignore')
+            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
         # Scoring Chances liitos
         if sc_totals is not None and shirt_col in summary_df.columns:
@@ -122,7 +124,7 @@ if not df.empty:
         if cols_to_drop:
             summary_df = summary_df.drop(columns=cols_to_drop)
 
-        # Etsitään tarkka Net xG -sarake raakadatasta ja nimetään se uudelleen
+        # Haetaan Net xG ja nimetään se oikein
         net_xg_source = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
         if net_xg_source:
             summary_df['Net xG Total'] = summary_df[net_xg_source]
@@ -131,23 +133,21 @@ if not df.empty:
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # Haluttu sarakkeiden järjestys
-        cols = list(summary_df.columns)
-        priority_cols = ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']
-        
-        reordered_cols = []
+        # Tiukka sarakkeiden järjestys: Näytetään vain valitut ja tärkeät sarakkeet
+        desired_order = []
         for c in group_cols:
-            if c in cols:
-                reordered_cols.append(c)
-        for c in priority_cols:
-            if c in cols and c not in reordered_cols:
-                reordered_cols.append(c)
-        for c in cols:
-            if c not in reordered_cols and 'corsi' not in c.lower() and 'xg' not in c.lower():
-                reordered_cols.append(c)
+            desired_order.append(c)
+        
+        metrics_to_add = ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']
+        for m in metrics_to_add:
+            if m in summary_df.columns and m not in desired_order:
+                desired_order.append(m)
+
+        # Varmistetaan että lopullisessa taulukossa on vain nämä halutut sarakkeet
+        final_summary_df = summary_df[[c for c in desired_order if c in summary_df.columns]]
 
         st.subheader("Pelaajien tilastoyhteenveto")
-        st.dataframe(summary_df[reordered_cols], use_container_width=True, hide_index=True)
+        st.dataframe(final_summary_df, use_container_width=True, hide_index=True)
 
     else:
         st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
