@@ -31,6 +31,12 @@ if not df.empty:
     game_col = next((c for c in df.columns if c.strip().lower() == 'game'), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
+    # Muunnetaan Goals, Points ja Net xG varmasti numeroiksi raakadatassa ennen ryhmittelyä
+    for col_name in ['Goals', 'Points', "Net xG (xG player on - opp. team's xG)"]:
+        if col_name in df.columns:
+            df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False)
+            df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
+
     def toi_to_seconds(val):
         if pd.isna(val):
             return 0
@@ -111,12 +117,6 @@ if not df.empty:
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         else:
             summary_df['Scoring Chances Total'] = 0
-        
-        # Siivotaan numeromuodot
-        for col in summary_df.columns:
-            if summary_df[col].dtype == object and col not in group_cols and col != 'Average TOI':
-                summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
-                summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
 
         # Siivotaan ylimääräiset Corsi-sarakkeet pois
         corsi_main = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
@@ -124,21 +124,16 @@ if not df.empty:
         if cols_to_drop:
             summary_df = summary_df.drop(columns=cols_to_drop)
 
-        # Haetaan Net xG tarkalla nimellä ja nimetään uudeksi sarakkeeksi
+        # Nimetään Net xG selkeäksi sarakkeeksi
         target_net_xg = "Net xG (xG player on - opp. team's xG)"
         if target_net_xg in summary_df.columns:
             summary_df['Net xG Total'] = summary_df[target_net_xg]
-        else:
-            # Varakuvaus, jos nimi poikkeaa vähän
-            net_xg_source = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-            if net_xg_source:
-                summary_df['Net xG Total'] = summary_df[net_xg_source]
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # Määritellään tasan ne sarakkeet, jotka halutaan näyttää (ja varmistetaan etteivät ne katoa)
+        # Halutut sarakkeet järjestykseen
         desired_columns = []
         for c in group_cols:
             desired_columns.append(c)
