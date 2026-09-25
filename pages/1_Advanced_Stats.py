@@ -70,12 +70,18 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
+        # ETSITÄÄN OIKEAT SARAKKEET (tunnistaa tarkat nimet kuvasta)
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
         corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
-        battles_col = next((c for c in summary_df.columns if 'puck battles won' in c.lower()), None)
+        battles_col = next((c for c in summary_df.columns if 'puck battle' in c.lower()), None)
         
+        # Pakotetaan numeerisiksi, jotta laskenta toimii varmasti
+        if net_xg_col:
+            summary_df[net_xg_col] = pd.to_numeric(summary_df[net_xg_col], errors='coerce').fillna(0)
         if corsi_col:
-            summary_df[corsi_col] = pd.to_numeric(summary_df[corsi_col], errors='coerce')
+            summary_df[corsi_col] = pd.to_numeric(summary_df[corsi_col], errors='coerce').fillna(0)
+        if battles_col:
+            summary_df[battles_col] = pd.to_numeric(summary_df[battles_col], errors='coerce').fillna(0)
         
         def get_z_score(series):
             if series is None or series.std() == 0 or pd.isna(series.std()):
@@ -122,7 +128,7 @@ if not df.empty:
             * **Net xG (Weight 1.5)**
             * **Scoring Chances Total (Weight 1.2)**
             * **CORSI Net (Weight 1.0)**
-            * **Puck Battles Won (Weight 0.8)**
+            * **Puck Battles (Weight 0.8)**
             """)
             
             st.markdown("---")
@@ -136,7 +142,7 @@ if not df.empty:
                 'Comp_NetxG': 'Net xG (Z-score)',
                 'Comp_SC': 'Scoring Chances (Z-score)',
                 'Comp_Corsi': 'CORSI (Z-score)',
-                'Comp_Battles': 'Battles Won (Z-score)'
+                'Comp_Battles': 'Battles (Z-score)'
             })
             
             st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
