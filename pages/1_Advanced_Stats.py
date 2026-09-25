@@ -87,20 +87,21 @@ if not df.empty:
     if group_cols and num_cols:
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
-        # Lasketaan pelatut pelit varmasti oikein
+        # Lasketaan pelatut pelit erillisenä tauluna, jotta sarakkeet eivät mene sekaisin
         if game_col:
-            games_played = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
-            summary_df = pd.merge(summary_df, games_played, on=group_cols)
+            games_played_df = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
+            summary_df = pd.merge(summary_df, games_played_df, on=group_cols, how='left')
         else:
             summary_df['Games Played'] = 1
             
-        # Peliajan keskiarvo
+        # Peliajan käsittely erikseen
         if toi_col and 'TOI_Seconds' in df.columns:
             toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
-            summary_df = pd.merge(summary_df, toi_summary, on=group_cols)
-            avg_sec = summary_df['Total_TOI_Sec'] / summary_df['Games Played'].replace(0, 1)
+            summary_df = pd.merge(summary_df, toi_summary, on=group_cols, how='left')
+            games_for_toi = summary_df['Games Played'] if 'Games Played' in summary_df.columns else 1
+            avg_sec = summary_df['Total_TOI_Sec'] / games_for_toi.replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
-            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'])
+            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
         # Scoring Chances liitos
         if sc_totals is not None and shirt_col in summary_df.columns:
@@ -129,7 +130,8 @@ if not df.empty:
             summary_df['Net xG Total'] = summary_df[net_xg_col]
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
-        summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
+        if sort_col in summary_df.columns:
+            summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
         # Haluttu sarakkeiden järjestys
         cols = list(summary_df.columns)
@@ -148,6 +150,10 @@ if not df.empty:
 
         st.subheader("Pelaajien tilastoyhteenveto")
         st.dataframe(summary_df[reordered_cols], use_container_width=True, hide_index=True)
+        
+        # Apuruutu, josta näet Excel-tiedoston sarakkeiden nimet varmuuden vuoksi
+        with st.expander("Näytä Excel-tiedoston sarakkeet (Vianetsintä)"):
+            st.write(list(df.columns))
 
     else:
         st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
