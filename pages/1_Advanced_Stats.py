@@ -87,21 +87,19 @@ if not df.empty:
     if group_cols and num_cols:
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
-        # Lasketaan pelatut pelit erillisenä tauluna, jotta sarakkeet eivät mene sekaisin
+        # Lasketaan pelatut pelit
         if game_col:
             games_played_df = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
             summary_df = pd.merge(summary_df, games_played_df, on=group_cols, how='left')
         else:
             summary_df['Games Played'] = 1
             
-        # Peliajan käsittely erikseen
-        if toi_col and 'TOI_Seconds' in df.columns:
-            toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
-            summary_df = pd.merge(summary_df, toi_summary, on=group_cols, how='left')
+        # Peliajan keskiarvo
+        if toi_col and 'TOI_Seconds' in summary_df.columns:
             games_for_toi = summary_df['Games Played'] if 'Games Played' in summary_df.columns else 1
-            avg_sec = summary_df['Total_TOI_Sec'] / games_for_toi.replace(0, 1)
+            avg_sec = summary_df['TOI_Seconds'] / games_for_toi.replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
-            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
+            summary_df = summary_df.drop(columns=['TOI_Seconds'], errors='ignore')
 
         # Scoring Chances liitos
         if sc_totals is not None and shirt_col in summary_df.columns:
@@ -124,10 +122,10 @@ if not df.empty:
         if cols_to_drop:
             summary_df = summary_df.drop(columns=cols_to_drop)
 
-        # Etsitään Net xG -sarake ja nimetään se selkeästi
-        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        if net_xg_col:
-            summary_df['Net xG Total'] = summary_df[net_xg_col]
+        # Etsitään tarkka Net xG -sarake raakadatasta ja nimetään se uudelleen
+        net_xg_source = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
+        if net_xg_source:
+            summary_df['Net xG Total'] = summary_df[net_xg_source]
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         if sort_col in summary_df.columns:
@@ -150,10 +148,6 @@ if not df.empty:
 
         st.subheader("Pelaajien tilastoyhteenveto")
         st.dataframe(summary_df[reordered_cols], use_container_width=True, hide_index=True)
-        
-        # Apuruutu, josta näet Excel-tiedoston sarakkeiden nimet varmuuden vuoksi
-        with st.expander("Näytä Excel-tiedoston sarakkeet (Vianetsintä)"):
-            st.write(list(df.columns))
 
     else:
         st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
