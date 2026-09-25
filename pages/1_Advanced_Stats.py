@@ -31,7 +31,7 @@ if not df.empty:
     game_col = next((c for c in df.columns if c.strip().lower() == 'game'), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    # Muunnetaan Goals, Points ja Net xG varmasti numeroiksi raakadatassa ennen ryhmittelyä
+    # Pakotetaan Goals, Points ja Net xG numeroiksi
     for col_name in ['Goals', 'Points', "Net xG (xG player on - opp. team's xG)"]:
         if col_name in df.columns:
             df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False)
@@ -59,7 +59,7 @@ if not df.empty:
     else:
         df['TOI_Seconds'] = 0.0
 
-    # Scoring Chances yhteenveto
+    # Scoring Chances yhteenveto ja prosentin laskenta
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
         p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
@@ -72,8 +72,18 @@ if not df.empty:
         ga = sc_summary['Goal Against'] if 'Goal Against' in sc_summary.columns else 0
         ca = sc_summary['Chance Against'] if 'Chance Against' in sc_summary.columns else 0
         
-        sc_summary['Scoring Chances Total'] = (gf + gfi + cf + cfi) - (ga + ca)
-        sc_totals = sc_summary[['Number', 'Scoring Chances Total']].copy()
+        # Kokonaismäärät
+        total_chances_for = gf + gfi + cf + cfi
+        total_chances_against = ga + ca
+        
+        sc_summary['Scoring Chances Total'] = total_chances_for - total_chances_against
+        
+        # Lasketaan Scoring Chance % (SC%)
+        total_all_chances = total_chances_for + total_chances_against
+        sc_summary['Scoring Chance %'] = (total_chances_for / total_all_chances.replace(0, 1)) * 100
+        sc_summary['Scoring Chance %'] = sc_summary['Scoring Chance %'].round(1) # Pyöristetään yhteen desimaaliin
+
+        sc_totals = sc_summary[['Number', 'Scoring Chances Total', 'Scoring Chance %']].copy()
         sc_totals['Clean_Number'] = pd.to_numeric(sc_totals['Number'], errors='coerce').fillna(-1).astype(int).astype(str)
 
     if player_name_col:
@@ -109,14 +119,16 @@ if not df.empty:
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
             summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
-        # Scoring Chances liitos
+        # Scoring Chances & Scoring Chance % liitos
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
-            summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total']], on='Clean_Number', how='left')
+            summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total', 'Scoring Chance %']], on='Clean_Number', how='left')
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
+            summary_df['Scoring Chance %'] = summary_df['Scoring Chance %'].fillna(50.0) # Oletus 50% jos ei dataa
         else:
             summary_df['Scoring Chances Total'] = 0
+            summary_df['Scoring Chance %'] = 50.0
 
         # Siivotaan ylimääräiset Corsi-sarakkeet pois
         corsi_main = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
@@ -133,12 +145,12 @@ if not df.empty:
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # Halutut sarakkeet järjestykseen
+        # Halutut sarakkeet järjestykseen (lisätty Scoring Chance %)
         desired_columns = []
         for c in group_cols:
             desired_columns.append(c)
         
-        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']:
+        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total', 'Scoring Chance %']:
             if c in summary_df.columns and c not in desired_columns:
                 desired_columns.append(c)
 
