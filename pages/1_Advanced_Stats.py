@@ -29,8 +29,31 @@ if not df.empty:
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
+    toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    # Haetaan Scoring Chances tiedostosta yhteenveto pelaajille
+    def toi_to_seconds(val):
+        if pd.isna(val):
+            return 0
+        if isinstance(val, (int, float)):
+            return float(val) * 60
+        val_str = str(val).strip()
+        if ':' in val_str:
+            parts = val_str.split(':')
+            try:
+                return float(parts[0]) * 60 + float(parts[1])
+            except ValueError:
+                return 0.0
+        try:
+            return float(val_str) * 60
+        except ValueError:
+            return 0.0
+
+    if toi_col:
+        df['TOI_Seconds'] = df[toi_col].apply(toi_to_seconds)
+    else:
+        df['TOI_Seconds'] = 0.0
+
+    # Scoring Chances yhteenveto
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
         p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
@@ -54,38 +77,48 @@ if not df.empty:
             df = df[df[player_name_col].isin(selected_players)]
             
     group_cols = [c for c in [shirt_col, player_name_col] if c]
-    exclude_cols = group_cols + ([game_col] if game_col else [])
+    exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
-        # Summataan tilastot yhteen pelaajakohtaisesti
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
-        # Lasketaan pelatut pelit erikseen (unikaalit pelit per pelaaja)
         if game_col:
             games_played = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
             summary_df = pd.merge(summary_df, games_played, on=group_cols)
             
-        # Liitetään Scoring Chances Total mukaan
+        if toi_col and 'TOI_Seconds' in df.columns:
+            toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
+            summary_df = pd.merge(summary_df, toi_summary, on=group_cols)
+            if 'Games Played' in summary_df.columns:
+                avg_sec = summary_df['Total_TOI_Sec'] / summary_df['Games Played'].replace(0, 1)
+            else:
+                avg_sec = summary_df['Total_TOI_Sec']
+            
+            summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
+            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'])
+
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
             summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total']], on='Clean_Number', how='left')
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # Siivotaan ja muutetaan tekstinä olevat arvot varmuuden vuoksi numeroiksi
         for col in summary_df.columns:
-            if summary_df[col].dtype == object and col not in group_cols:
+            if summary_df[col].dtype == object and col not in group_cols and col != 'Average TOI':
                 summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
                 summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
 
-        # Järjestetään haluttujen sarakkeiden mukaan (esim. pisteiden mukaan laskevasti, jos löytyy)
+        # Etsitään oikea sarake xG:lle pelaajan ollessa jäällä ja nimetään se xG Totaliksi
+        xg_on_col = next((c for c in summary_df.columns if 'xg with a player on' in c.lower()), None)
+        if xg_on_col:
+            summary_df = summary_df.rename(columns={xg_on_col: 'xG Total'})
+
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # Määritellään sarakkeiden haluttu järjestys (Games Played, Goals, Points, jne. ensin)
         cols = list(summary_df.columns)
-        priority_cols = ['Games Played', 'Goals', 'Points', '+/-', 'Faceoffs', 'Shots on goal', 'Net xG (xg on ice - opp. team\'s xG)', 'CORSI', 'Scoring Chances Total']
+        priority_cols = ['Games Played', 'Average TOI', 'Goals', 'Points', 'xG Total', 'CORSI', 'Scoring Chances Total']
         
         reordered_cols = []
         for c in group_cols:
@@ -102,6 +135,6 @@ if not df.empty:
         st.dataframe(summary_df[reordered_cols], use_container_width=True, hide_index=True)
 
     else:
-        st.info("Ei löydyttä sopivia sarakkeita laskentaan.")
+        st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
 else:
     st.info("Ei dataa saatavilla.")
