@@ -20,7 +20,6 @@ def load_all_data(adv_mtime, sc_mtime):
     
     return df_adv, df_sc
 
-# Haetaan tiedostojen viimeisimmät muokkausajat cache-päivitystä varten
 mtime_adv = os.path.getmtime(adv_path) if os.path.exists(adv_path) else 0
 mtime_sc = os.path.getmtime(sc_path) if os.path.exists(sc_path) else 0
 
@@ -70,18 +69,26 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # ETSITÄÄN OIKEAT SARAKKEET (tunnistaa tarkat nimet kuvasta)
-        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
-        battles_col = next((c for c in summary_df.columns if 'puck battle' in c.lower()), None)
+        # ETSITÄÄN SARAKKEET JOUSTAVAMMIN
+        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower() or 'xg' in c.lower()), None)
+        corsi_col = next((c for c in summary_df.columns if 'corsi' in c.lower()), None)
+        battles_col = next((c for c in summary_df.columns if 'battle' in c.lower() or 'puck' in c.lower()), None)
         
-        # Pakotetaan numeerisiksi, jotta laskenta toimii varmasti
+        # --- APUPURKKI PILKKUJEN MUUTTAMISEKSI PISTEIKSI JA NUMEROIKSI ---
+        def clean_and_convert(series):
+            if series is None:
+                return None
+            # Jos sarake on tekstimuotoinen ja siinä on pilkkuja desimaaleina, vaihdetaan pisteiksi
+            if series.dtype == object:
+                series = series.astype(str).str.replace(',', '.', regex=False)
+            return pd.to_numeric(series, errors='coerce').fillna(0)
+
         if net_xg_col:
-            summary_df[net_xg_col] = pd.to_numeric(summary_df[net_xg_col], errors='coerce').fillna(0)
+            summary_df[net_xg_col] = clean_and_convert(summary_df[net_xg_col])
         if corsi_col:
-            summary_df[corsi_col] = pd.to_numeric(summary_df[corsi_col], errors='coerce').fillna(0)
+            summary_df[corsi_col] = clean_and_convert(summary_df[corsi_col])
         if battles_col:
-            summary_df[battles_col] = pd.to_numeric(summary_df[battles_col], errors='coerce').fillna(0)
+            summary_df[battles_col] = clean_and_convert(summary_df[battles_col])
         
         def get_z_score(series):
             if series is None or series.std() == 0 or pd.isna(series.std()):
@@ -103,6 +110,13 @@ if not df.empty:
         )
         
         summary_df = summary_df.sort_values(by='5v5 Impact Score', ascending=False).reset_index(drop=True)
+
+        # --- VIANJÄLJITYSNÄKYMÄ (Poista tämä myöhemmin halutessasi) ---
+        with st.expander("🔍 Debug: Tarkista löydetyt sarakkeet ja niiden arvot"):
+            st.write(f"Löydetty Net xG -sarake: `{net_xg_col}`")
+            st.write(f"Löydetty Puck battles -sarake: `{battles_col}`")
+            if net_xg_col and battles_col:
+                st.write(summary_df[[shirt_col, player_name_col, net_xg_col, battles_col]].head(3))
 
         tab_table, tab_breakdown = st.tabs(["📊 Advanced Player Stats", "⭐ 5v5 Impact Score Breakdown"])
 
