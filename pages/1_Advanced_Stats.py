@@ -29,7 +29,31 @@ if not df.empty:
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
+    toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
+    # Apufunktio jääajan (mm:ss tai sekunnit) muuttamiseksi desinuuteiksi
+    def toi_to_minutes(val):
+        if pd.isna(val):
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val) # Jos se on jo minuutteina
+        val_str = str(val).strip()
+        if ':' in val_str:
+            parts = val_str.split(':')
+            try:
+                return float(parts[0]) + float(parts[1]) / 60.0
+            except ValueError:
+                return 0.0
+        try:
+            return float(val_str)
+        except ValueError:
+            return 0.0
+
+    if toi_col:
+        df['TOI_Minutes'] = df[toi_col].apply(toi_to_minutes)
+    else:
+        df['TOI_Minutes'] = 0.0
+
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
         p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
@@ -53,10 +77,11 @@ if not df.empty:
             df = df[df[player_name_col].isin(selected_players)]
             
     group_cols = [c for c in [shirt_col, player_name_col] if c]
-    exclude_cols = group_cols + ([game_col] if game_col else [])
+    exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
+        # Summataan tilastot ja peliaika yhteen pelaajakohtaisesti
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
         if game_col:
@@ -69,16 +94,13 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # ETSITÄÄN SARAKKEET JOUSTAVAMMIN
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower() or 'xg' in c.lower()), None)
         corsi_col = next((c for c in summary_df.columns if 'corsi' in c.lower()), None)
         battles_col = next((c for c in summary_df.columns if 'battle' in c.lower() or 'puck' in c.lower()), None)
         
-        # --- APUPURKKI PILKKUJEN MUUTTAMISEKSI PISTEIKSI JA NUMEROIKSI ---
         def clean_and_convert(series):
             if series is None:
                 return None
-            # Jos sarake on tekstimuotoinen ja siinä on pilkkuja desimaaleina, vaihdetaan pisteiksi
             if series.dtype == object:
                 series = series.astype(str).str.replace(',', '.', regex=False)
             return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -89,16 +111,34 @@ if not df.empty:
             summary_df[corsi_col] = clean_and_convert(summary_df[corsi_col])
         if battles_col:
             summary_df[battles_col] = clean_and_convert(summary_df[battles_col])
+
+        # --- JÄÄAIKAAN SUHTEUTTAMINEN (Per 60 minuuttia) ---
+        toi_sum_col = 'TOI_Minutes' if 'TOI_Minutes' in summary_df.columns else None
         
+        if toi_sum_col and summary_df[toi_sum_col].sum() > 0:
+            # Muutetaan arvot suhteessa peliaikaan (per 60 min) jotta vertailu on reilua
+            factor = 60.0 / summary_df[toi_sum_col].replace(0, 1) # vältetään nollalla jako
+            
+            # Luodaan vertailua varten Per 60 -sarakkeet Z-score laskentaa varten
+            metric_net_xg = summary_df[net_xg_col] * factor if net_xg_col else pd.Series(0, index=summary_df.index)
+            metric_sc = summary_df['Scoring Chances Total'] * factor if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
+            metric_corsi = summary_df[corsi_col] * factor if corsi_col else pd.Series(0, index=summary_df.index)
+            metric_battles = summary_df[battles_col] * factor if battles_col else pd.Series(0, index=summary_df.index)
+        else:
+            metric_net_xg = summary_df[net_xg_col] if net_xg_col else pd.Series(0, index=summary_df.index)
+            metric_sc = summary_df['Scoring Chances Total'] if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
+            metric_corsi = summary_df[corsi_col] if corsi_col else pd.Series(0, index=summary_df.index)
+            metric_battles = summary_df[battles_col] if battles_col else pd.Series(0, index=summary_df.index)
+
         def get_z_score(series):
             if series is None or series.std() == 0 or pd.isna(series.std()):
                 return pd.Series(0, index=series.index)
             return (series - series.mean()) / series.std()
 
-        z_xg = get_z_score(summary_df[net_xg_col]) if net_xg_col else pd.Series(0, index=summary_df.index)
-        z_sc = get_z_score(summary_df['Scoring Chances Total']) if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
-        z_corsi = get_z_score(summary_df[corsi_col]) if corsi_col else pd.Series(0, index=summary_df.index)
-        z_battles = get_z_score(summary_df[battles_col]) if battles_col else pd.Series(0, index=summary_df.index)
+        z_xg = get_z_score(metric_net_xg)
+        z_sc = get_z_score(metric_sc)
+        z_corsi = get_z_score(metric_corsi)
+        z_battles = get_z_score(metric_battles)
         
         summary_df['Comp_NetxG'] = z_xg * 1.5
         summary_df['Comp_SC'] = z_sc * 1.2
@@ -109,19 +149,16 @@ if not df.empty:
             summary_df['Comp_NetxG'] + summary_df['Comp_SC'] + summary_df['Comp_Corsi'] + summary_df['Comp_Battles'], 2
         )
         
-        summary_df = summary_df.sort_values(by='5v5 Impact Score', ascending=False).reset_index(drop=True)
+        # Siivotaan apusarake pois lopullisesta näytöstä
+        if 'TOI_Minutes' in summary_df.columns:
+            summary_df = summary_df.drop(columns=['TOI_Minutes'])
 
-        # --- VIANJÄLJITYSNÄKYMÄ (Poista tämä myöhemmin halutessasi) ---
-        with st.expander("🔍 Debug: Tarkista löydetyt sarakkeet ja niiden arvot"):
-            st.write(f"Löydetty Net xG -sarake: `{net_xg_col}`")
-            st.write(f"Löydetty Puck battles -sarake: `{battles_col}`")
-            if net_xg_col and battles_col:
-                st.write(summary_df[[shirt_col, player_name_col, net_xg_col, battles_col]].head(3))
+        summary_df = summary_df.sort_values(by='5v5 Impact Score', ascending=False).reset_index(drop=True)
 
         tab_table, tab_breakdown = st.tabs(["📊 Advanced Player Stats", "⭐ 5v5 Impact Score Breakdown"])
 
         with tab_table:
-            st.subheader("Advanced Player Statistics")
+            st.subheader("Advanced Player Statistics (Per 60 min normalized impact)")
             display_df = summary_df.drop(columns=[c for c in summary_df.columns if c.startswith('Comp_')])
             
             cols = list(display_df.columns)
@@ -136,13 +173,13 @@ if not df.empty:
             st.dataframe(display_df[cols], use_container_width=True, hide_index=True)
 
         with tab_breakdown:
-            st.subheader("What makes up the 5v5 Impact Score? (Z-score standardized)")
+            st.subheader("What makes up the 5v5 Impact Score? (Z-score standardized Per 60)")
             st.markdown("""
-            Statistics are standardized (Z-score) to make different metrics directly comparable:
-            * **Net xG (Weight 1.5)**
-            * **Scoring Chances Total (Weight 1.2)**
-            * **CORSI Net (Weight 1.0)**
-            * **Puck Battles (Weight 0.8)**
+            Statistics are adjusted to **Per 60 minutes** and standardized (Z-score) so that players with different ice times can be compared fairly:
+            * **Net xG / 60 (Weight 1.5)**
+            * **Scoring Chances / 60 (Weight 1.2)**
+            * **CORSI Net / 60 (Weight 1.0)**
+            * **Puck Battles / 60 (Weight 0.8)**
             """)
             
             st.markdown("---")
