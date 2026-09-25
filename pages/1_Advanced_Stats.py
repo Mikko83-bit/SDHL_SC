@@ -78,6 +78,10 @@ if not df.empty:
             
     group_cols = [c for c in [shirt_col, player_name_col] if c]
     exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
+    
+    # Poistetaan Fenwick-sarakkeet jo ennen ryhmittelyä automaattisesti
+    df = df.drop(columns=[c for c in df.columns if 'fenwick' in c.lower()], errors='ignore')
+    
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
@@ -109,16 +113,23 @@ if not df.empty:
                 summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
                 summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
 
-        # Etsitään oikea sarake xG:lle pelaajan ollessa jäällä ja nimetään se xG Totaliksi
-        xg_on_col = next((c for c in summary_df.columns if 'xg with a player on' in c.lower()), None)
-        if xg_on_col:
-            summary_df = summary_df.rename(columns={xg_on_col: 'xG Total'})
+        # Siivotaan Corsi-sarakkeet: varmistetaan, että vain pää-Corsi jää (ja poistetaan CORSI+ / CORSI-)
+        corsi_main = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
+        cols_to_drop = [c for c in summary_df.columns if 'corsi' in c.lower() and c != corsi_main]
+        if cols_to_drop:
+            summary_df = summary_df.drop(columns=cols_to_drop)
+
+        # Etsitään Net xG -sarake ja nimetään se selkeästi
+        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
+        if net_xg_col:
+            summary_df = summary_df.rename(columns={net_xg_col: 'Net xG Total'})
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
+        # Haluttu sarakkeiden järjestys
         cols = list(summary_df.columns)
-        priority_cols = ['Games Played', 'Average TOI', 'Goals', 'Points', 'xG Total', 'CORSI', 'Scoring Chances Total']
+        priority_cols = ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']
         
         reordered_cols = []
         for c in group_cols:
@@ -128,7 +139,7 @@ if not df.empty:
             if c in cols and c not in reordered_cols:
                 reordered_cols.append(c)
         for c in cols:
-            if c not in reordered_cols:
+            if c not in reordered_cols and 'corsi' not in c.lower(): #varmistus ettei ylimääräisiä corsi-sarakkeita tule mukaan
                 reordered_cols.append(c)
 
         st.subheader("Pelaajien tilastoyhteenveto")
