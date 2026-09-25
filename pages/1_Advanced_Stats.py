@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.set_page_config(page_title="LHF Advanced Stats & Impact Score", layout="wide")
-st.title("⭐ LHF Dam - Advanced Player Statistics & Impact Analysis")
+st.set_page_config(page_title="LHF Dam - Player Statistics Summary", layout="wide")
+st.title("📊 LHF Dam - Player Statistics Summary")
 
 adv_path = "LHF Dam season 2026-2027.xlsx"
 sc_path = "SDHL 2026-2027 scoring chances.xlsx"
@@ -29,30 +29,8 @@ if not df.empty:
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
-    toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    def toi_to_minutes(val):
-        if pd.isna(val):
-            return 0.0
-        if isinstance(val, (int, float)):
-            return float(val)
-        val_str = str(val).strip()
-        if ':' in val_str:
-            parts = val_str.split(':')
-            try:
-                return float(parts[0]) + float(parts[1]) / 60.0
-            except ValueError:
-                return 0.0
-        try:
-            return float(val_str)
-        except ValueError:
-            return 0.0
-
-    if toi_col:
-        df['TOI_Minutes'] = df[toi_col].apply(toi_to_minutes)
-    else:
-        df['TOI_Minutes'] = 0.0
-
+    # Haetaan Scoring Chances tiedostosta yhteenveto pelaajille
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
         p_num_cols = [c for c in players_sc_df.select_dtypes(include=['number']).columns.tolist() if c not in ["Number", "Game", "Game "]]
@@ -76,126 +54,54 @@ if not df.empty:
             df = df[df[player_name_col].isin(selected_players)]
             
     group_cols = [c for c in [shirt_col, player_name_col] if c]
-    exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
+    exclude_cols = group_cols + ([game_col] if game_col else [])
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
+        # Summataan tilastot yhteen pelaajakohtaisesti
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
+        # Lasketaan pelatut pelit erikseen (unikaalit pelit per pelaaja)
         if game_col:
             games_played = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
             summary_df = pd.merge(summary_df, games_played, on=group_cols)
             
+        # Liitetään Scoring Chances Total mukaan
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
             summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total']], on='Clean_Number', how='left')
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        # ETSITÄÄN TARKAT SARAKKEET (Kuvien perusteella)
-        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
-        battles_col = next((c for c in summary_df.columns if c.strip() == 'Puck battles'), None)
+        # Siivotaan ja muutetaan tekstinä olevat arvot varmuuden vuoksi numeroiksi
+        for col in summary_df.columns:
+            if summary_df[col].dtype == object and col not in group_cols:
+                summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
+                summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
+
+        # Järjestetään haluttujen sarakkeiden mukaan (esim. pisteiden mukaan laskevasti, jos löytyy)
+        sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
+        summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
+
+        # Määritellään sarakkeiden haluttu järjestys (Games Played, Goals, Points, jne. ensin)
+        cols = list(summary_df.columns)
+        priority_cols = ['Games Played', 'Goals', 'Points', '+/-', 'Faceoffs', 'Shots on goal', 'Net xG (xg on ice - opp. team\'s xG)', 'CORSI', 'Scoring Chances Total']
         
-        def clean_and_convert(series):
-            if series is None:
-                return pd.Series(0, index=summary_df.index)
-            if series.dtype == object:
-                series = series.astype(str).str.replace(',', '.', regex=False)
-            return pd.to_numeric(series, errors='coerce').fillna(0)
+        reordered_cols = []
+        for c in group_cols:
+            if c in cols:
+                reordered_cols.append(c)
+        for c in priority_cols:
+            if c in cols and c not in reordered_cols:
+                reordered_cols.append(c)
+        for c in cols:
+            if c not in reordered_cols:
+                reordered_cols.append(c)
 
-        if net_xg_col:
-            summary_df[net_xg_col] = clean_and_convert(summary_df[net_xg_col])
-        if corsi_col:
-            summary_df[corsi_col] = clean_and_convert(summary_df[corsi_col])
-        if battles_col:
-            summary_df[battles_col] = clean_and_convert(summary_df[battles_col])
-
-        # --- JÄÄAIKAAN SUHTEUTTAMINEN TAI KESKIARVO ---
-        toi_sum_col = 'TOI_Minutes' if 'TOI_Minutes' in summary_df.columns else None
-        
-        if toi_sum_col and summary_df[toi_sum_col].sum() > 0:
-            # Käytetään kerrointa, mutta rajoitetaan vähimmäispeliaikaa (esim vähintään 1 min), ettei yksittäiset vaihdot räjäytä lukuja
-            valid_toi = summary_df[toi_sum_col].clip(lower=1.0)
-            factor = 60.0 / valid_toi
-            
-            metric_net_xg = summary_df[net_xg_col] * factor if net_xg_col else pd.Series(0, index=summary_df.index)
-            metric_sc = summary_df['Scoring Chances Total'] * factor if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
-            metric_corsi = summary_df[corsi_col] * factor if corsi_col else pd.Series(0, index=summary_df.index)
-            metric_battles = summary_df[battles_col] * factor if battles_col else pd.Series(0, index=summary_df.index)
-        else:
-            metric_net_xg = summary_df[net_xg_col] if net_xg_col else pd.Series(0, index=summary_df.index)
-            metric_sc = summary_df['Scoring Chances Total'] if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
-            metric_corsi = summary_df[corsi_col] if corsi_col else pd.Series(0, index=summary_df.index)
-            metric_battles = summary_df[battles_col] if battles_col else pd.Series(0, index=summary_df.index)
-
-        def get_z_score(series):
-            if series is None or series.std() == 0 or pd.isna(series.std()):
-                return pd.Series(0, index=series.index)
-            return (series - series.mean()) / series.std()
-
-        z_xg = get_z_score(metric_net_xg)
-        z_sc = get_z_score(metric_sc)
-        z_corsi = get_z_score(metric_corsi)
-        z_battles = get_z_score(metric_battles)
-        
-        summary_df['Comp_NetxG'] = z_xg * 1.5
-        summary_df['Comp_SC'] = z_sc * 1.2
-        summary_df['Comp_Corsi'] = z_corsi * 1.0
-        summary_df['Comp_Battles'] = z_battles * 0.8
-        
-        summary_df['5v5 Impact Score'] = round(
-            summary_df['Comp_NetxG'] + summary_df['Comp_SC'] + summary_df['Comp_Corsi'] + summary_df['Comp_Battles'], 2
-        )
-        
-        if 'TOI_Minutes' in summary_df.columns:
-            summary_df = summary_df.drop(columns=['TOI_Minutes'])
-
-        summary_df = summary_df.sort_values(by='5v5 Impact Score', ascending=False).reset_index(drop=True)
-
-        tab_table, tab_breakdown = st.tabs(["📊 Advanced Player Stats", "⭐ 5v5 Impact Score Breakdown"])
-
-        with tab_table:
-            st.subheader("Advanced Player Statistics (Per 60 min normalized)")
-            display_df = summary_df.drop(columns=[c for c in summary_df.columns if c.startswith('Comp_')])
-            
-            cols = list(display_df.columns)
-            for col_to_move in ['5v5 Impact Score', 'Scoring Chances Total', 'Games Played']:
-                if col_to_move in cols:
-                    cols.remove(col_to_move)
-            insert_idx = 2 if len(cols) >= 2 else len(cols)
-            for col_to_move in reversed(['5v5 Impact Score', 'Scoring Chances Total', 'Games Played']):
-                if col_to_move in display_df.columns:
-                    cols.insert(insert_idx, col_to_move)
-            
-            st.dataframe(display_df[cols], use_container_width=True, hide_index=True)
-
-        with tab_breakdown:
-            st.subheader("What makes up the 5v5 Impact Score? (Z-score standardized Per 60)")
-            st.markdown("""
-            * **Net xG / 60 (Weight 1.5)**
-            * **Scoring Chances / 60 (Weight 1.2)**
-            * **CORSI Net / 60 (Weight 1.0)**
-            * **Puck Battles / 60 (Weight 0.8)**
-            """)
-            
-            st.markdown("---")
-            st.subheader("Player Component Breakdown")
-            
-            breakdown_table_cols = [shirt_col, player_name_col, '5v5 Impact Score', 'Comp_NetxG', 'Comp_SC', 'Comp_Corsi', 'Comp_Battles']
-            breakdown_table_cols = [c for c in breakdown_table_cols if c and c in summary_df.columns]
-            
-            breakdown_display = summary_df[breakdown_table_cols].copy()
-            breakdown_display = breakdown_display.rename(columns={
-                'Comp_NetxG': 'Net xG (Z-score)',
-                'Comp_SC': 'Scoring Chances (Z-score)',
-                'Comp_Corsi': 'CORSI (Z-score)',
-                'Comp_Battles': 'Battles (Z-score)'
-            })
-            
-            st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
+        st.subheader("Pelaajien tilastoyhteenveto")
+        st.dataframe(summary_df[reordered_cols], use_container_width=True, hide_index=True)
 
     else:
-        st.info("No suitable columns found for calculations.")
+        st.info("Ei löydyttä sopivia sarakkeita laskentaan.")
 else:
-    st.info("No data available.")
+    st.info("Ei dataa saatavilla.")
