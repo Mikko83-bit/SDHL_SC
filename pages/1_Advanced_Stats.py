@@ -118,33 +118,36 @@ if not df.empty:
                 summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
                 summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
 
-        # Siivotaan ylimääräiset Corsi-sarakkeet pois (jätetään vain pää-Corsi)
+        # Siivotaan ylimääräiset Corsi-sarakkeet pois
         corsi_main = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
         cols_to_drop = [c for c in summary_df.columns if 'corsi' in c.lower() and c != corsi_main]
         if cols_to_drop:
             summary_df = summary_df.drop(columns=cols_to_drop)
 
-        # Haetaan Net xG ja nimetään se oikein
-        net_xg_source = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
-        if net_xg_source:
-            summary_df['Net xG Total'] = summary_df[net_xg_source]
+        # Haetaan Net xG tarkalla nimellä ja nimetään uudeksi sarakkeeksi
+        target_net_xg = "Net xG (xG player on - opp. team's xG)"
+        if target_net_xg in summary_df.columns:
+            summary_df['Net xG Total'] = summary_df[target_net_xg]
+        else:
+            # Varakuvaus, jos nimi poikkeaa vähän
+            net_xg_source = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
+            if net_xg_source:
+                summary_df['Net xG Total'] = summary_df[net_xg_source]
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # Tiukka sarakkeiden järjestys: Näytetään vain valitut ja tärkeät sarakkeet
-        desired_order = []
+        # Määritellään tasan ne sarakkeet, jotka halutaan näyttää (ja varmistetaan etteivät ne katoa)
+        desired_columns = []
         for c in group_cols:
-            desired_order.append(c)
+            desired_columns.append(c)
         
-        metrics_to_add = ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']
-        for m in metrics_to_add:
-            if m in summary_df.columns and m not in desired_order:
-                desired_order.append(m)
+        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']:
+            if c in summary_df.columns and c not in desired_columns:
+                desired_columns.append(c)
 
-        # Varmistetaan että lopullisessa taulukossa on vain nämä halutut sarakkeet
-        final_summary_df = summary_df[[c for c in desired_order if c in summary_df.columns]]
+        final_summary_df = summary_df[desired_columns]
 
         st.subheader("Pelaajien tilastoyhteenveto")
         st.dataframe(final_summary_df, use_container_width=True, hide_index=True)
