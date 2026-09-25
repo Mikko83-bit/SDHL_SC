@@ -31,12 +31,11 @@ if not df.empty:
     game_col = next((c for c in df.columns if 'game' in c.lower()), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    # Apufunktio jääajan (mm:ss tai sekunnit) muuttamiseksi desinuuteiksi
     def toi_to_minutes(val):
         if pd.isna(val):
             return 0.0
         if isinstance(val, (int, float)):
-            return float(val) # Jos se on jo minuutteina
+            return float(val)
         val_str = str(val).strip()
         if ':' in val_str:
             parts = val_str.split(':')
@@ -81,7 +80,6 @@ if not df.empty:
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
-        # Summataan tilastot ja peliaika yhteen pelaajakohtaisesti
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
         if game_col:
@@ -94,13 +92,14 @@ if not df.empty:
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
         
-        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower() or 'xg' in c.lower()), None)
-        corsi_col = next((c for c in summary_df.columns if 'corsi' in c.lower()), None)
-        battles_col = next((c for c in summary_df.columns if 'battle' in c.lower() or 'puck' in c.lower()), None)
+        # ETSITÄÄN TARKAT SARAKKEET (Kuvien perusteella)
+        net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
+        corsi_col = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
+        battles_col = next((c for c in summary_df.columns if c.strip() == 'Puck battles'), None)
         
         def clean_and_convert(series):
             if series is None:
-                return None
+                return pd.Series(0, index=summary_df.index)
             if series.dtype == object:
                 series = series.astype(str).str.replace(',', '.', regex=False)
             return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -112,14 +111,14 @@ if not df.empty:
         if battles_col:
             summary_df[battles_col] = clean_and_convert(summary_df[battles_col])
 
-        # --- JÄÄAIKAAN SUHTEUTTAMINEN (Per 60 minuuttia) ---
+        # --- JÄÄAIKAAN SUHTEUTTAMINEN TAI KESKIARVO ---
         toi_sum_col = 'TOI_Minutes' if 'TOI_Minutes' in summary_df.columns else None
         
         if toi_sum_col and summary_df[toi_sum_col].sum() > 0:
-            # Muutetaan arvot suhteessa peliaikaan (per 60 min) jotta vertailu on reilua
-            factor = 60.0 / summary_df[toi_sum_col].replace(0, 1) # vältetään nollalla jako
+            # Käytetään kerrointa, mutta rajoitetaan vähimmäispeliaikaa (esim vähintään 1 min), ettei yksittäiset vaihdot räjäytä lukuja
+            valid_toi = summary_df[toi_sum_col].clip(lower=1.0)
+            factor = 60.0 / valid_toi
             
-            # Luodaan vertailua varten Per 60 -sarakkeet Z-score laskentaa varten
             metric_net_xg = summary_df[net_xg_col] * factor if net_xg_col else pd.Series(0, index=summary_df.index)
             metric_sc = summary_df['Scoring Chances Total'] * factor if 'Scoring Chances Total' in summary_df.columns else pd.Series(0, index=summary_df.index)
             metric_corsi = summary_df[corsi_col] * factor if corsi_col else pd.Series(0, index=summary_df.index)
@@ -149,7 +148,6 @@ if not df.empty:
             summary_df['Comp_NetxG'] + summary_df['Comp_SC'] + summary_df['Comp_Corsi'] + summary_df['Comp_Battles'], 2
         )
         
-        # Siivotaan apusarake pois lopullisesta näytöstä
         if 'TOI_Minutes' in summary_df.columns:
             summary_df = summary_df.drop(columns=['TOI_Minutes'])
 
@@ -158,7 +156,7 @@ if not df.empty:
         tab_table, tab_breakdown = st.tabs(["📊 Advanced Player Stats", "⭐ 5v5 Impact Score Breakdown"])
 
         with tab_table:
-            st.subheader("Advanced Player Statistics (Per 60 min normalized impact)")
+            st.subheader("Advanced Player Statistics (Per 60 min normalized)")
             display_df = summary_df.drop(columns=[c for c in summary_df.columns if c.startswith('Comp_')])
             
             cols = list(display_df.columns)
@@ -175,7 +173,6 @@ if not df.empty:
         with tab_breakdown:
             st.subheader("What makes up the 5v5 Impact Score? (Z-score standardized Per 60)")
             st.markdown("""
-            Statistics are adjusted to **Per 60 minutes** and standardized (Z-score) so that players with different ice times can be compared fairly:
             * **Net xG / 60 (Weight 1.5)**
             * **Scoring Chances / 60 (Weight 1.2)**
             * **CORSI Net / 60 (Weight 1.0)**
