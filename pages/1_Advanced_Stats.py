@@ -28,7 +28,7 @@ df, players_sc_df = load_all_data(mtime_adv, mtime_sc)
 if not df.empty:
     shirt_col = next((c for c in df.columns if 'shirt' in c.lower() or 'number' in c.lower()), None)
     player_name_col = next((c for c in df.columns if 'player' in c.lower() and 'shirt' not in c.lower()), None)
-    game_col = next((c for c in df.columns if 'game' in c.lower()), None)
+    game_col = next((c for c in df.columns if c.strip().lower() == 'game'), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
     def toi_to_seconds(val):
@@ -77,43 +77,47 @@ if not df.empty:
             df = df[df[player_name_col].isin(selected_players)]
             
     group_cols = [c for c in [shirt_col, player_name_col] if c]
-    exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
     
-    # Poistetaan Fenwick-sarakkeet jo ennen ryhmittelyä automaattisesti
+    # Poistetaan Fenwick-sarakkeet
     df = df.drop(columns=[c for c in df.columns if 'fenwick' in c.lower()], errors='ignore')
     
+    exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
     num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
     
     if group_cols and num_cols:
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
         
+        # Lasketaan pelatut pelit varmasti oikein
         if game_col:
             games_played = df.groupby(group_cols)[game_col].nunique().reset_index(name='Games Played')
             summary_df = pd.merge(summary_df, games_played, on=group_cols)
+        else:
+            summary_df['Games Played'] = 1
             
+        # Peliajan keskiarvo
         if toi_col and 'TOI_Seconds' in df.columns:
             toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
             summary_df = pd.merge(summary_df, toi_summary, on=group_cols)
-            if 'Games Played' in summary_df.columns:
-                avg_sec = summary_df['Total_TOI_Sec'] / summary_df['Games Played'].replace(0, 1)
-            else:
-                avg_sec = summary_df['Total_TOI_Sec']
-            
+            avg_sec = summary_df['Total_TOI_Sec'] / summary_df['Games Played'].replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
             summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'])
 
+        # Scoring Chances liitos
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
             summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total']], on='Clean_Number', how='left')
             summary_df = summary_df.drop(columns=['Clean_Number'])
             summary_df['Scoring Chances Total'] = summary_df['Scoring Chances Total'].fillna(0)
+        else:
+            summary_df['Scoring Chances Total'] = 0
         
+        # Siivotaan numeromuodot
         for col in summary_df.columns:
             if summary_df[col].dtype == object and col not in group_cols and col != 'Average TOI':
                 summary_df[col] = summary_df[col].astype(str).str.replace(',', '.', regex=False)
                 summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce').fillna(0)
 
-        # Siivotaan Corsi-sarakkeet: varmistetaan, että vain pää-Corsi jää (ja poistetaan CORSI+ / CORSI-)
+        # Siivotaan ylimääräiset Corsi-sarakkeet pois (jätetään vain pää-Corsi)
         corsi_main = next((c for c in summary_df.columns if c.strip().upper() == 'CORSI'), None)
         cols_to_drop = [c for c in summary_df.columns if 'corsi' in c.lower() and c != corsi_main]
         if cols_to_drop:
@@ -122,7 +126,7 @@ if not df.empty:
         # Etsitään Net xG -sarake ja nimetään se selkeästi
         net_xg_col = next((c for c in summary_df.columns if 'net xg' in c.lower()), None)
         if net_xg_col:
-            summary_df = summary_df.rename(columns={net_xg_col: 'Net xG Total'})
+            summary_df['Net xG Total'] = summary_df[net_xg_col]
 
         sort_col = 'Points' if 'Points' in summary_df.columns else (shirt_col if shirt_col else group_cols[0])
         summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
@@ -139,7 +143,7 @@ if not df.empty:
             if c in cols and c not in reordered_cols:
                 reordered_cols.append(c)
         for c in cols:
-            if c not in reordered_cols and 'corsi' not in c.lower(): #varmistus ettei ylimääräisiä corsi-sarakkeita tule mukaan
+            if c not in reordered_cols and 'corsi' not in c.lower() and 'xg' not in c.lower():
                 reordered_cols.append(c)
 
         st.subheader("Pelaajien tilastoyhteenveto")
