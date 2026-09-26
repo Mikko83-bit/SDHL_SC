@@ -10,9 +10,12 @@ sc_path = "SDHL 2026-2027 scoring chances.xlsx"
 
 @st.cache_data
 def load_all_data(adv_mtime, sc_mtime):
-    xls_adv = pd.ExcelFile(adv_path)
-    df_adv = pd.read_excel(xls_adv, sheet_name=xls_adv.sheet_names[0])
-    df_adv.columns = df_adv.columns.astype(str).str.strip()
+    if os.path.exists(adv_path):
+        xls_adv = pd.ExcelFile(adv_path)
+        df_adv = pd.read_excel(xls_adv, sheet_name=xls_adv.sheet_names[0])
+        df_adv.columns = df_adv.columns.astype(str).str.strip()
+    else:
+        df_adv = pd.DataFrame()
     
     if os.path.exists(sc_path):
         xls_sc = pd.ExcelFile(sc_path)
@@ -112,7 +115,7 @@ if not df.empty:
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
             summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
-        # Aloitusten (Faceoffs) käsittely: Faceoffs ja Faceoffs won %
+        # Aloitusten (Faceoffs) varma haku ja laskenta
         fo_total_col = next((c for c in df.columns if 'faceoffs' in c.lower() and 'won' not in c.lower() and 'lost' not in c.lower()), None)
         fo_won_col = next((c for c in df.columns if 'faceoffs won' in c.lower() and '%' not in c.lower()), None)
 
@@ -121,6 +124,13 @@ if not df.empty:
             fo_summary['Faceoffs'] = fo_summary[fo_total_col]
             fo_summary['Faceoffs won %'] = (fo_summary[fo_won_col] / fo_summary[fo_total_col].replace(0, 1) * 100).round(1)
             summary_df = pd.merge(summary_df, fo_summary[group_cols + ['Faceoffs', 'Faceoffs won %']], on=group_cols, how='left')
+        else:
+            # Varakoodi jos sarakkeiden nimet poikkeavat hieman
+            possible_fo = [c for c in df.columns if 'faceoff' in c.lower()]
+            if possible_fo:
+                # Etsitään summoitava sarake aloituksille
+                summary_df['Faceoffs'] = df.groupby(group_cols)[possible_fo[0]].sum().values if possible_fo else 0
+                summary_df['Faceoffs won %'] = 0.0
 
         # Liitetään Scoring Chances Total pelaajan numeron perusteella
         if sc_totals is not None and shirt_col in summary_df.columns:
@@ -155,7 +165,28 @@ if not df.empty:
         final_summary_df = summary_df[desired_columns]
 
         st.subheader("Pelaajien tilastoyhteenveto")
-        st.dataframe(final_summary_df, use_container_width=True, hide_index=True)
+        
+        # Tiivistetään taulukon sarakkeet asettamalla sarakkeille sopivat leveydet ja estämällä venyminen
+        column_config = {
+            shirt_col: st.column_config.NumberColumn("Nro", width="small"),
+            player_name_col: st.column_config.TextColumn("Pelaaja", width="medium"),
+            "Games Played": st.column_config.NumberColumn("Ottelut", width="small"),
+            "Average TOI": st.column_config.TextColumn("Aika/Peli", width="small"),
+            "Goals": st.column_config.NumberColumn("Maalit", width="small"),
+            "Points": st.column_config.NumberColumn("Pisteet", width="small"),
+            "Net xG Total": st.column_config.NumberColumn("Net xG", width="small", format="%.2f"),
+            "CORSI": st.column_config.NumberColumn("Corsi", width="small"),
+            "Scoring Chances Total": st.column_config.NumberColumn("SC Total", width="small"),
+            "Faceoffs": st.column_config.NumberColumn("Aloitukset", width="small"),
+            "Faceoffs won %": st.column_config.NumberColumn("Aloitus %", width="small", format="%.1f%%")
+        }
+
+        st.dataframe(
+            final_summary_df, 
+            use_container_width=False, 
+            hide_index=True,
+            column_config={k: v for k, v in column_config.items() if k in final_summary_df.columns}
+        )
 
     else:
         st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
