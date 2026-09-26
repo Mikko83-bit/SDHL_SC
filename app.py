@@ -59,7 +59,6 @@ team_df['Category'] = team_df['Descriptor'].apply(classify_descriptor)
 
 game_col_p = 'Game ' if 'Game ' in players_df.columns else ('Game' if 'Game' in players_df.columns else None)
 
-# Luodaan yhdistetty lista peleistä vastustajineen ja päivämäärineen suoraan datasta
 combined_df = pd.concat([
     players_df[['Game ', 'Opponent', 'Date']].rename(columns={'Game ': 'Game'}) if 'Game ' in players_df.columns else pd.DataFrame(columns=['Game', 'Opponent', 'Date']),
     team_df[['Game', 'Opponent', 'Date']] if {'Game', 'Opponent', 'Date'}.issubset(team_df.columns) else pd.DataFrame(columns=['Game', 'Opponent', 'Date'])
@@ -67,7 +66,6 @@ combined_df = pd.concat([
 
 combined_df = combined_df.sort_values(by='Game')
 
-# Rakennetaan näyttönimet ja kartoitus takaisin pelinumeroon
 game_options = []
 game_mapping = {}
 
@@ -76,7 +74,6 @@ for _, row in combined_df.iterrows():
     opp = row.get('Opponent', '')
     date = row.get('Date', '')
     
-    # Muotoillaan siisti teksti valikkoon
     label = f"Game {g_num}"
     if pd.notna(opp) and str(opp).strip() != '':
         label += f" vs {opp}"
@@ -87,7 +84,6 @@ for _, row in combined_df.iterrows():
     game_mapping[label] = g_num
 
 if not game_options:
-    # Varakohdta jos sarakkeita ei löydy
     all_games = sorted(list(set(players_df[game_col_p].dropna().unique().tolist() + team_df['Game'].dropna().unique().tolist()))) if game_col_p else []
     game_options = [f"Game {g}" for g in all_games]
     game_mapping = {f"Game {g}": g for g in all_games}
@@ -166,7 +162,15 @@ with tab1:
             cols_to_show = base_cols + available_selected
             team_summary = team_summary[[c for c in cols_to_show if c in team_summary.columns]]
             
-        st.dataframe(team_summary, use_container_width=True, hide_index=True)
+        team_config = {
+            "Category": st.column_config.TextColumn("Category", width="small"),
+            "Descriptor": st.column_config.TextColumn("Descriptor", width="medium"),
+        }
+        for col in team_summary.columns:
+            if col not in team_config:
+                team_config[col] = st.column_config.NumberColumn(col, width="small")
+            
+        st.dataframe(team_summary, use_container_width=False, column_config=team_config, hide_index=True)
     else:
         st.info("No team data available for selected filters.")
 
@@ -188,10 +192,10 @@ with tab2:
         sort_col = "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
         player_summary = player_summary.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
         
-        column_config = {col: st.column_config.NumberColumn(col, width="medium") for col in player_summary.columns}
+        column_config = {col: st.column_config.NumberColumn(col, width="small") for col in player_summary.columns}
         column_config["Number"] = st.column_config.TextColumn("Number", width="small")
         
-        st.dataframe(player_summary, use_container_width=True, column_config=column_config, hide_index=True)
+        st.dataframe(player_summary, use_container_width=False, column_config=column_config, hide_index=True)
     else:
         st.info("No player data available for selected filters.")
 
