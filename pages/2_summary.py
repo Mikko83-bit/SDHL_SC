@@ -54,24 +54,33 @@ if df is not None:
             + (df.get("Hits", 0) * w_taklaukset)
         )
 
-        # Ryhmitellään kauden yhteenvedoksi (lasketaan summat tai keskiarvot)
+        # Ryhmitellään kauden yhteenvedoksi (as_index=False estää törmäykset)
         agg_dict = {
             "Goals": "sum",
             "Assists": "sum",
             "Points": "sum",
             "Shots on goal": "sum",
             "xG (Expected goals)": "sum",
-            "Oma_Indeksi": "mean", # Katsotaan keskiarvo-indeksiä per peli
-            pelaaja_col: "count"  # Pelatut ottelut
+            "Oma_Indeksi": "mean" # Keskiarvo-indeksi per peli
         }
         
-        # Suodatetaan vain ne sarakkeet jotka löytyvät
-        agg_dict = {k: v for k, v in agg_dict.items() if k in df.columns or k == pelaaja_col}
+        # Suodatetaan vain sarakkeet jotka löytyvät datasta
+        agg_dict = {k: v for k, v in agg_dict.items() if k in df.columns}
 
-        summary_df = df.groupby(pelaaja_col).agg(agg_dict).reset_index()
-        summary_df = summary_df.rename(columns={pelaaja_col: "Player", "Goals": "Tot Goals", "Points": "Tot Points", "Oma_Indeksi": "Avg Custom Index"})
+        summary_df = df.groupby(pelaaja_col, as_index=False).agg(agg_dict)
         
-        if "Player" in summary_df.columns and "Tot Points" in summary_df.columns:
+        # Lasketaan pelatut ottelut erikseen ja lisätään taulukkoon
+        games_played = df.groupby(pelaaja_col).size().reset_index(name="Games Played")
+        summary_df = pd.merge(summary_df, games_played, on=pelaaja_col)
+
+        summary_df = summary_df.rename(columns={
+            pelaaja_col: "Player", 
+            "Goals": "Tot Goals", 
+            "Points": "Tot Points", 
+            "Oma_Indeksi": "Avg Custom Index"
+        })
+        
+        if "Player" in summary_df.columns:
             summary_df = summary_df.sort_values(by="Avg Custom Index", ascending=False)
 
             st.subheader("⭐ Pelaajien Ranking – Oma Suoritusindeksi")
