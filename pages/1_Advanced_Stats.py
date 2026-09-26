@@ -37,15 +37,18 @@ if not df.empty:
     game_col = next((c for c in df.columns if c.strip().lower() == 'game'), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    # Pakotetaan perussarakkeet ja aloitussarakkeet numeroiksi
+    # Pakotetaan numeromuotoon muut paitsi peliaika ja tekstit
     for col_name in df.columns:
+        if col_name == toi_col:
+            continue
         if any(term in col_name.lower() for term in ['goals', 'points', 'net xg', 'faceoff', 'draw', 'won', 'shots', 'corsi', 'blocked', 'xg']):
             df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False)
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
 
+    # Vankka muunnos MM:SS muodossa olevalle peliajalle sekunneiksi
     def toi_to_seconds(val):
         if pd.isna(val):
-            return 0
+            return 0.0
         if isinstance(val, (int, float)):
             return float(val) * 60
         val_str = str(val).strip()
@@ -65,7 +68,7 @@ if not df.empty:
     else:
         df['TOI_Seconds'] = 0.0
 
-    # Scoring Chances Total laskenta tiedostosta
+    # Scoring Chances Total laskenta toisesta tiedostosta
     sc_totals = None
     if not players_sc_df.empty and 'Number' in players_sc_df.columns:
         for col in players_sc_df.columns:
@@ -96,7 +99,7 @@ if not df.empty:
     df = df.drop(columns=[c for c in df.columns if 'fenwick' in c.lower()], errors='ignore')
     
     exclude_cols = group_cols + ([game_col, toi_col] if game_col and toi_col else ([game_col] if game_col else []))
-    num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols]
+    num_cols = [c for c in df.select_dtypes(include=['number']).columns.tolist() if c not in exclude_cols and c != 'TOI_Seconds']
     
     if group_cols and num_cols:
         summary_df = df.groupby(group_cols)[num_cols].sum().reset_index()
@@ -107,16 +110,16 @@ if not df.empty:
         else:
             summary_df['Games Played'] = 1
             
-        if toi_col and 'TOI_Seconds' in df.columns:
+        if 'TOI_Seconds' in df.columns:
             toi_summary = df.groupby(group_cols)['TOI_Seconds'].sum().reset_index(name='Total_TOI_Sec')
             summary_df = pd.merge(summary_df, toi_summary, on=group_cols, how='left')
             games_for_toi = summary_df['Games Played'] if 'Games Played' in summary_df.columns else 1
             avg_sec = summary_df['Total_TOI_Sec'] / games_for_toi.replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
-            summary_df['Total TOI Minutes'] = summary_df['Total_TOI_Sec'] / 60.0
-            summary_df = summary_df.drop(columns=['TOI_Seconds'], errors='ignore')
+            summary_df['Total_TOI_Minutes'] = summary_df['Total_TOI_Sec'] / 60.0
+            summary_df = summary_df.drop(columns=['Total_TOI_Sec'], errors='ignore')
         else:
-            summary_df['Total TOI Minutes'] = 0.0
+            summary_df['Total_TOI_Minutes'] = 0.0
             summary_df['Average TOI'] = "0:00"
 
         # Aloitusten (Faceoffs) haku ja laskenta
@@ -153,7 +156,7 @@ if not df.empty:
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        # ----------------- KAKSI ERILLISTÄ VÄLILEHTEÄ -----------------
+        # ----------------- VÄLILEHDET -----------------
         tab_standard, tab_per60 = st.tabs(["📊 Standard Summary", "⚡ Advanced Stats (Per / 60 min)"])
 
         with tab_standard:
@@ -193,7 +196,6 @@ if not df.empty:
         with tab_per60:
             st.subheader("Advanced Stats - Per / 60 min")
             
-            # Etsitään oikeat sarakkeen nimet datasta
             col_goals = next((c for c in summary_df.columns if c.strip().lower() == 'goals'), None)
             col_points = next((c for c in summary_df.columns if c.strip().lower() == 'points'), None)
             col_xg = next((c for c in summary_df.columns if 'expected' in c.lower() or c.strip().lower() == 'xg'), None)
@@ -208,7 +210,10 @@ if not df.empty:
             if 'Average TOI' in summary_df.columns:
                 per60_df['Average TOI'] = summary_df['Average TOI']
 
-            toi_mins = summary_df['Total_TOI_Minutes'].replace(0, 1) # Vältetään nollalla jako
+            if 'Total_TOI_Minutes' not in summary_df.columns:
+                summary_df['Total_TOI_Minutes'] = 0.0
+
+            toi_mins = summary_df['Total_TOI_Minutes'].replace(0, 1)
 
             if col_goals:
                 per60_df['Goals / 60'] = (summary_df[col_goals] / toi_mins * 60).round(2)
@@ -225,7 +230,6 @@ if not df.empty:
             if col_blocks:
                 per60_df['Blocked shots / 60'] = (summary_df[col_blocks] / toi_mins * 60).round(2)
 
-            # Järjestetään pisteiden mukaan oletuksena
             if 'Points / 60' in per60_df.columns:
                 per60_df = per60_df.sort_values(by='Points / 60', ascending=False).reset_index(drop=True)
 
