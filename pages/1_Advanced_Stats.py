@@ -34,9 +34,9 @@ if not df.empty:
     game_col = next((c for c in df.columns if c.strip().lower() == 'game'), None)
     toi_col = next((c for c in df.columns if 'time on ice' in c.lower() or 'toi' in c.lower()), None)
     
-    # Pakotetaan perussarakkeet numeroiksi
-    for col_name in ['Goals', 'Points', "Net xG (xG player on - opp. team's xG)"]:
-        if col_name in df.columns:
+    # Pakotetaan perussarakkeet ja aloitussarakkeet numeroiksi
+    for col_name in df.columns:
+        if any(term in col_name.lower() for term in ['goals', 'points', 'net xg', 'faceoff', 'draw', 'won']):
             df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False)
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
 
@@ -112,6 +112,16 @@ if not df.empty:
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
             summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
+        # Aloitusten (Faceoffs) käsittely: Faceoffs ja Faceoffs won %
+        fo_total_col = next((c for c in df.columns if 'faceoffs' in c.lower() and 'won' not in c.lower() and 'lost' not in c.lower()), None)
+        fo_won_col = next((c for c in df.columns if 'faceoffs won' in c.lower() and '%' not in c.lower()), None)
+
+        if fo_total_col and fo_won_col:
+            fo_summary = df.groupby(group_cols)[[fo_total_col, fo_won_col]].sum().reset_index()
+            fo_summary['Faceoffs'] = fo_summary[fo_total_col]
+            fo_summary['Faceoffs won %'] = (fo_summary[fo_won_col] / fo_summary[fo_total_col].replace(0, 1) * 100).round(1)
+            summary_df = pd.merge(summary_df, fo_summary[group_cols + ['Faceoffs', 'Faceoffs won %']], on=group_cols, how='left')
+
         # Liitetään Scoring Chances Total pelaajan numeron perusteella
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
@@ -138,7 +148,7 @@ if not df.empty:
         for c in group_cols:
             desired_columns.append(c)
         
-        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total']:
+        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total', 'Faceoffs', 'Faceoffs won %']:
             if c in summary_df.columns and c not in desired_columns:
                 desired_columns.append(c)
 
