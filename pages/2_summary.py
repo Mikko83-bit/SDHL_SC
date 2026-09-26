@@ -4,38 +4,86 @@ import streamlit as st
 st.set_page_config(page_title="Kauden Yhteenveto", page_icon="📊", layout="wide")
 
 st.header("📊 Luleå HF – Koko Kauden Yhteenveto (SDHL)")
-st.markdown("Tämä sivu kokoaa yhteen kaikkien pelattujen otteluiden tilastot.")
+st.markdown(
+    "Tämä sivu laskee yhteen kaikkien pelattujen otteluiden tilastot ja pelaajien"
+    " kokonaissaldot."
+)
 
-# Ladataan kausitiedosto
+# Tiedoston lataus (automaattinen tai manuaalinen)
 excel_path = "LHF Dam season 2026–2027.xlsx"
+df = None
 
 try:
-  # Luetaan Excel (varmista että sheets vastaa tiedostosi rakennetta)
   df = pd.read_excel(excel_path)
+except Exception:
+  pass
 
-  st.subheader("📋 Koko kauden raakadata")
-  st.dataframe(df)
-
-  # Esimerkki yhteenvedosta: Jos taulukossa on pelaajat ja maalit/pisteet
-  if "Pelaaja" in df.columns and "Maalit" in df.columns:
-    st.subheader("⭐ Pelaajien kokonaistehot kaudelta")
-    summary_df = (
-        df.groupby("Pelaaja")[["Maalit", "Laukaukset"]]
-        .sum()
-        .reset_index()
-        .sort_values(by="Maalit", ascending=False)
-    )
-    st.dataframe(summary_df)
-
-    st.bar_chart(summary_df.set_index("Pelaaja")["Maalit"])
-
-except Exception as e:
-  st.warning(
-      f"Tiedostoa '{excel_path}' ei voitu ladata automaattisesti. Virhe: {e}"
-  )
-  uploaded_file = st.file_uploader(
-      "Lataa kauden Excel-tiedosto manuaalisesti", type=["xlsx", "csv"]
-  )
-  if uploaded_file is not None:
+uploaded_file = st.file_uploader(
+    "Lataa tai päivitä kauden Excel-tiedosto:", type=["xlsx", "csv"]
+)
+if uploaded_file is not None:
+  if uploaded_file.name.endswith(".csv"):
+    df = pd.read_csv(uploaded_file)
+  else:
     df = pd.read_excel(uploaded_file)
-    st.dataframe(df)
+
+if df is not None:
+  # Tarkistetaan sarakkeiden nimet (puhdistetaan mahdolliset tyhjät välit)
+  df.columns = df.columns.str.strip()
+
+  # Varmistetaan että tarvittavat sarakkeet löytyvät
+  pelaaja_col = (
+      "Player" if "Player" in df.columns else ("Pelaaja" if "Pelaaja" in df else None)
+  )
+
+  if pelaaja_col:
+    st.success(f"Datan ladataan onnistuneesti! Rivejä yhteensä: {len(df)}")
+
+    # Muutetaan numeromuotoisiksi sarakkeet, joissa voi olla lukuja (korvataan puuttuvat nollilla)
+    numeric_cols = ["Goals", "Assists", "Points", "Shots on goal", "xG (Expected goals)"]
+    for col in numeric_cols:
+      if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="fillna").fillna(0)
+
+    # Ryhmitellään pelaajittain koko kauden yhteenvetoa varten
+    agg_dict = {}
+    if "Goals" in df.columns:
+      agg_dict["Goals"] = "sum"
+    if "Assists" in df.columns:
+      agg_dict["Assists"] = "sum"
+    if "Points" in df.columns:
+      agg_dict["Points"] = "sum"
+    if "Shots on goal" in df.columns:
+      agg_dict["Shots on goal"] = "sum"
+    if "xG (Expected goals)" in df.columns:
+      agg_dict["xG (Expected goals)"] = "sum"
+    if "Game" in df.columns:
+      agg_dict["Game"] = "count"  # Pelatut ottelut
+
+    if agg_dict:
+      summary_df = df.groupby(pelaaja_col).agg(agg_dict).reset_index()
+      if "Game" in summary_df.columns:
+        summary_df = summary_df.rename(columns={"Game": "Games Played"})
+
+      # Järjestetään pisteiden mukaan
+      sort_col = "Points" if "Points" in summary_df.columns else summary_df.columns[1]
+      summary_df = summary_df.sort_values(by=sort_col, ascending=False)
+
+      st.subheader("🏆 Pelaajien kokonaistilastot kaudelta")
+      st.dataframe(summary_df, use_container_width=True)
+
+      # Visualisointi
+      st.subheader("📈 Pisteet / Maalit per pelaaja")
+      chart_col = "Points" if "Points" in summary_df.columns else "Goals"
+      st.bar_chart(summary_df.set_index(pelaaja_col)[chart_col])
+
+    with st.expander("🔍 Näytä koko raakadata"):
+      st.dataframe(df)
+
+  else:
+    st.error(
+        "Taulukosta ei löytynyt pelaajan nimitunnistetta ('Player' tai"
+        " 'Pelaaja'). Tarkista tiedoston sarakkeet."
+    )
+else:
+  st.info("Lataa tiedosto yllä olevasta laatikosta aloittaaksesi.")
