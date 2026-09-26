@@ -115,22 +115,21 @@ if not df.empty:
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
             summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
 
-        # Aloitusten (Faceoffs) varma haku ja laskenta
-        fo_total_col = next((c for c in df.columns if 'faceoffs' in c.lower() and 'won' not in c.lower() and 'lost' not in c.lower()), None)
+        # Aloitusten (Faceoffs) haku ja laskenta englanninkielisillä nimillä
+        fo_total_col = next((c for c in df.columns if c.strip().lower() == 'faceoffs'), None)
         fo_won_col = next((c for c in df.columns if 'faceoffs won' in c.lower() and '%' not in c.lower()), None)
 
         if fo_total_col and fo_won_col:
             fo_summary = df.groupby(group_cols)[[fo_total_col, fo_won_col]].sum().reset_index()
-            fo_summary['Faceoffs'] = fo_summary[fo_total_col]
-            fo_summary['Faceoffs won %'] = (fo_summary[fo_won_col] / fo_summary[fo_total_col].replace(0, 1) * 100).round(1)
-            summary_df = pd.merge(summary_df, fo_summary[group_cols + ['Faceoffs', 'Faceoffs won %']], on=group_cols, how='left')
+            summary_df['Faceoffs'] = fo_summary[fo_total_col]
+            summary_df['Faceoffs won %'] = (fo_summary[fo_won_col] / fo_summary[fo_total_col].replace(0, 1) * 100).round(1)
         else:
-            # Varakoodi jos sarakkeiden nimet poikkeavat hieman
-            possible_fo = [c for c in df.columns if 'faceoff' in c.lower()]
+            possible_fo = [c for c in df.columns if 'faceoff' in c.lower() and 'won' not in c.lower() and '%' not in c.lower()]
             if possible_fo:
-                # Etsitään summoitava sarake aloituksille
-                summary_df['Faceoffs'] = df.groupby(group_cols)[possible_fo[0]].sum().values if possible_fo else 0
-                summary_df['Faceoffs won %'] = 0.0
+                summary_df['Faceoffs'] = df.groupby(group_cols)[possible_fo[0]].sum().values
+            else:
+                summary_df['Faceoffs'] = 0
+            summary_df['Faceoffs won %'] = 0.0
 
         # Liitetään Scoring Chances Total pelaajan numeron perusteella
         if sc_totals is not None and shirt_col in summary_df.columns:
@@ -166,19 +165,18 @@ if not df.empty:
 
         st.subheader("Pelaajien tilastoyhteenveto")
         
-        # Tiivistetään taulukon sarakkeet asettamalla sarakkeille sopivat leveydet ja estämällä venyminen
         column_config = {
-            shirt_col: st.column_config.NumberColumn("Nro", width="small"),
-            player_name_col: st.column_config.TextColumn("Pelaaja", width="medium"),
-            "Games Played": st.column_config.NumberColumn("Ottelut", width="small"),
-            "Average TOI": st.column_config.TextColumn("Aika/Peli", width="small"),
-            "Goals": st.column_config.NumberColumn("Maalit", width="small"),
-            "Points": st.column_config.NumberColumn("Pisteet", width="small"),
-            "Net xG Total": st.column_config.NumberColumn("Net xG", width="small", format="%.2f"),
-            "CORSI": st.column_config.NumberColumn("Corsi", width="small"),
-            "Scoring Chances Total": st.column_config.NumberColumn("SC Total", width="small"),
-            "Faceoffs": st.column_config.NumberColumn("Aloitukset", width="small"),
-            "Faceoffs won %": st.column_config.NumberColumn("Aloitus %", width="small", format="%.1f%%")
+            shirt_col: st.column_config.NumberColumn("Shirt number", width="small"),
+            player_name_col: st.column_config.TextColumn("Player", width="medium"),
+            "Games Played": st.column_config.NumberColumn("Games Played", width="small"),
+            "Average TOI": st.column_config.TextColumn("Average TOI", width="small"),
+            "Goals": st.column_config.NumberColumn("Goals", width="small"),
+            "Points": st.column_config.NumberColumn("Points", width="small"),
+            "Net xG Total": st.column_config.NumberColumn("Net xG Total", width="small", format="%.2f"),
+            "CORSI": st.column_config.NumberColumn("CORSI", width="small"),
+            "Scoring Chances Total": st.column_config.NumberColumn("Scoring Chances Total", width="small"),
+            "Faceoffs": st.column_config.NumberColumn("Faceoffs", width="small"),
+            "Faceoffs won %": st.column_config.NumberColumn("Faceoffs won %", width="small", format="%.1f%%")
         }
 
         st.dataframe(
