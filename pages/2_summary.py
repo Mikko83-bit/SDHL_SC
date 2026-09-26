@@ -37,13 +37,13 @@ if df is not None:
   )
 
   if pelaaja_col:
-    st.success(f"Datan ladataan onnistuneesti! Rivejä yhteensä: {len(df)}")
+    st.success(f"Data ladattu onnistuneesti! Rivejä yhteensä: {len(df)}")
 
     # Muutetaan numeromuotoisiksi sarakkeet, joissa voi olla lukuja (korvataan puuttuvat nollilla)
     numeric_cols = ["Goals", "Assists", "Points", "Shots on goal", "xG (Expected goals)"]
     for col in numeric_cols:
       if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="fillna").fillna(0)
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     # Ryhmitellään pelaajittain koko kauden yhteenvetoa varten
     agg_dict = {}
@@ -87,3 +87,4 @@ if df is not None:
     )
 else:
   st.info("Lataa tiedosto yllä olevasta laatikosta aloittaaksesi.")
+    
