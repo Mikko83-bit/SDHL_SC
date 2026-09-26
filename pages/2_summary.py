@@ -1,90 +1,91 @@
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Kauden Yhteenveto", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Kauden Yhteenveto & Indeksi", page_icon="🏒", layout="wide")
 
-st.header("📊 Luleå HF – Koko Kauden Yhteenveto (SDHL)")
-st.markdown(
-    "Tämä sivu laskee yhteen kaikkien pelattujen otteluiden tilastot ja pelaajien"
-    " kokonaissaldot."
-)
+st.header("🏒 Luleå HF – Koko Kauden Yhteenveto & Oma Indeksi")
+st.markdown("Tämä sivu laskee yhteen kauden tilastot ja rakentaa mukautetun suoritusindeksin.")
 
-# Tiedoston lataus (automaattinen tai manuaalinen)
+# Tiedoston lataus
 excel_path = "LHF Dam season 2026–2027.xlsx"
 df = None
 
 try:
-  df = pd.read_excel(excel_path)
+    df = pd.read_excel(excel_path)
 except Exception:
-  pass
+    pass
 
-uploaded_file = st.file_uploader(
-    "Lataa tai päivitä kauden Excel-tiedosto:", type=["xlsx", "csv"]
-)
+uploaded_file = st.file_uploader("Lataa tai päivitä kauden Excel-tiedosto:", type=["xlsx", "csv"])
 if uploaded_file is not None:
-  if uploaded_file.name.endswith(".csv"):
-    df = pd.read_csv(uploaded_file)
-  else:
-    df = pd.read_excel(uploaded_file)
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
 
 if df is not None:
-  # Tarkistetaan sarakkeiden nimet (puhdistetaan mahdolliset tyhjät välit)
-  df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip()
+    pelaaja_col = "Player" if "Player" in df.columns else ("Pelaaja" if "Pelaaja" in df else None)
 
-  # Varmistetaan että tarvittavat sarakkeet löytyvät
-  pelaaja_col = (
-      "Player" if "Player" in df.columns else ("Pelaaja" if "Pelaaja" in df else None)
-  )
+    if pelaaja_col:
+        # Puhdistetaan numeromuodot
+        numeric_cols = ["Goals", "Assists", "Points", "Shots on goal", "xG (Expected goals)", "Blocked shots", "Hits"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-  if pelaaja_col:
-    st.success(f"Data ladattu onnistuneesti! Rivejä yhteensä: {len(df)}")
+        # --- OMA INDEKSI - SIVUPALKKI ---
+        st.sidebar.header("⚙️ Oma Indeksi -painotukset")
+        st.sidebar.markdown("Säädä muuttujien painoarvoja:")
+        
+        w_maalit = st.sidebar.slider("Maalit (Goals)", 1.0, 10.0, 5.0)
+        w_syotot = st.sidebar.slider("Syötöt (Assists)", 0.5, 5.0, 3.0)
+        w_xg = st.sidebar.slider("Odottamat (xG)", 0.0, 10.0, 3.0)
+        w_blokit = st.sidebar.slider("Blokatut laukaukset", 0.0, 5.0, 1.5)
+        w_taklaukset = st.sidebar.slider("Taklaukset (Hits)", 0.0, 3.0, 1.0)
+        perustaso = st.sidebar.slider("Indeksin perustaso (Baseline)", 50, 150, 100)
 
-    # Muutetaan numeromuotoisiksi sarakkeet, joissa voi olla lukuja (korvataan puuttuvat nollilla)
-    numeric_cols = ["Goals", "Assists", "Points", "Shots on goal", "xG (Expected goals)"]
-    for col in numeric_cols:
-      if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        # Lasketaan oma indeksi jokaiselle riville (ottelukohtaisesti)
+        df["Oma_Indeksi"] = (
+            perustaso
+            + (df.get("Goals", 0) * w_maalit)
+            + (df.get("Assists", 0) * w_syotot)
+            + (df.get("xG (Expected goals)", 0) * w_xg)
+            + (df.get("Blocked shots", 0) * w_blokit)
+            + (df.get("Hits", 0) * w_taklaukset)
+        )
 
-    # Ryhmitellään pelaajittain koko kauden yhteenvetoa varten
-    agg_dict = {}
-    if "Goals" in df.columns:
-      agg_dict["Goals"] = "sum"
-    if "Assists" in df.columns:
-      agg_dict["Assists"] = "sum"
-    if "Points" in df.columns:
-      agg_dict["Points"] = "sum"
-    if "Shots on goal" in df.columns:
-      agg_dict["Shots on goal"] = "sum"
-    if "xG (Expected goals)" in df.columns:
-      agg_dict["xG (Expected goals)"] = "sum"
-    if "Game" in df.columns:
-      agg_dict["Game"] = "count"  # Pelatut ottelut
+        # Ryhmitellään kauden yhteenvedoksi (lasketaan summat tai keskiarvot)
+        agg_dict = {
+            "Goals": "sum",
+            "Assists": "sum",
+            "Points": "sum",
+            "Shots on goal": "sum",
+            "xG (Expected goals)": "sum",
+            "Oma_Indeksi": "mean", # Katsotaan keskiarvo-indeksiä per peli
+            pelaaja_col: "count"  # Pelatut ottelut
+        }
+        
+        # Suodatetaan vain ne sarakkeet jotka löytyvät
+        agg_dict = {k: v for k, v in agg_dict.items() if k in df.columns or k == pelaaja_col}
 
-    if agg_dict:
-      summary_df = df.groupby(pelaaja_col).agg(agg_dict).reset_index()
-      if "Game" in summary_df.columns:
-        summary_df = summary_df.rename(columns={"Game": "Games Played"})
+        summary_df = df.groupby(pelaaja_col).agg(agg_dict).reset_index()
+        summary_df = summary_df.rename(columns={pelaaja_col: "Player", "Goals": "Tot Goals", "Points": "Tot Points", "Oma_Indeksi": "Avg Custom Index"})
+        
+        if "Player" in summary_df.columns and "Tot Points" in summary_df.columns:
+            summary_df = summary_df.sort_values(by="Avg Custom Index", ascending=False)
 
-      # Järjestetään pisteiden mukaan
-      sort_col = "Points" if "Points" in summary_df.columns else summary_df.columns[1]
-      summary_df = summary_df.sort_values(by=sort_col, ascending=False)
+            st.subheader("⭐ Pelaajien Ranking – Oma Suoritusindeksi")
+            st.markdown("Tämä taulukko näyttää pelaajien keskimääräisen indeksin ottelua kohden säädettyjen painotusten mukaan.")
+            st.dataframe(summary_df, use_container_width=True)
 
-      st.subheader("🏆 Pelaajien kokonaistilastot kaudelta")
-      st.dataframe(summary_df, use_container_width=True)
+            # Graafi
+            st.subheader("📈 Pelaajien vertailu omalla indeksillä")
+            st.bar_chart(summary_df.set_index("Player")["Avg Custom Index"])
 
-      # Visualisointi
-      st.subheader("📈 Pisteet / Maalit per pelaaja")
-      chart_col = "Points" if "Points" in summary_df.columns else "Goals"
-      st.bar_chart(summary_df.set_index(pelaaja_col)[chart_col])
+        with st.expander("🔍 Näytä koko raakadata"):
+            st.dataframe(df)
 
-    with st.expander("🔍 Näytä koko raakadata"):
-      st.dataframe(df)
-
-  else:
-    st.error(
-        "Taulukosta ei löytynyt pelaajan nimitunnistetta ('Player' tai"
-        " 'Pelaaja'). Tarkista tiedoston sarakkeet."
-    )
+    else:
+        st.error("Taulukosta ei löytynyt pelaajan nimitunnistetta ('Player' tai 'Pelaaja').")
 else:
-  st.info("Lataa tiedosto yllä olevasta laatikosta aloittaaksesi.")
-    
+    st.info("Lataa tiedosto yllä olevasta laatikosta aloittaaksesi.")
