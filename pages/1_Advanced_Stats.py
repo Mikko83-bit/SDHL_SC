@@ -39,7 +39,7 @@ if not df.empty:
     
     # Pakotetaan perussarakkeet ja aloitussarakkeet numeroiksi
     for col_name in df.columns:
-        if any(term in col_name.lower() for term in ['goals', 'points', 'net xg', 'faceoff', 'draw', 'won']):
+        if any(term in col_name.lower() for term in ['goals', 'points', 'net xg', 'faceoff', 'draw', 'won', 'shots', 'corsi', 'blocked', 'xg']):
             df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False)
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
 
@@ -113,9 +113,13 @@ if not df.empty:
             games_for_toi = summary_df['Games Played'] if 'Games Played' in summary_df.columns else 1
             avg_sec = summary_df['Total_TOI_Sec'] / games_for_toi.replace(0, 1)
             summary_df['Average TOI'] = avg_sec.apply(lambda s: f"{int(s // 60)}:{int(s % 60):02d}")
-            summary_df = summary_df.drop(columns=['Total_TOI_Sec', 'TOI_Seconds'], errors='ignore')
+            summary_df['Total TOI Minutes'] = summary_df['Total_TOI_Sec'] / 60.0
+            summary_df = summary_df.drop(columns=['TOI_Seconds'], errors='ignore')
+        else:
+            summary_df['Total TOI Minutes'] = 0.0
+            summary_df['Average TOI'] = "0:00"
 
-        # Aloitusten (Faceoffs) haku ja laskenta englanninkielisillä nimillä
+        # Aloitusten (Faceoffs) haku ja laskenta
         fo_total_col = next((c for c in df.columns if c.strip().lower() == 'faceoffs'), None)
         fo_won_col = next((c for c in df.columns if 'faceoffs won' in c.lower() and '%' not in c.lower()), None)
 
@@ -124,14 +128,10 @@ if not df.empty:
             summary_df['Faceoffs'] = fo_summary[fo_total_col]
             summary_df['Faceoffs won %'] = (fo_summary[fo_won_col] / fo_summary[fo_total_col].replace(0, 1) * 100).round(1)
         else:
-            possible_fo = [c for c in df.columns if 'faceoff' in c.lower() and 'won' not in c.lower() and '%' not in c.lower()]
-            if possible_fo:
-                summary_df['Faceoffs'] = df.groupby(group_cols)[possible_fo[0]].sum().values
-            else:
-                summary_df['Faceoffs'] = 0
+            summary_df['Faceoffs'] = 0
             summary_df['Faceoffs won %'] = 0.0
 
-        # Liitetään Scoring Chances Total pelaajan numeron perusteella
+        # Liitetään Scoring Chances Total
         if sc_totals is not None and shirt_col in summary_df.columns:
             summary_df['Clean_Number'] = pd.to_numeric(summary_df[shirt_col], errors='coerce').fillna(-1).astype(int).astype(str)
             summary_df = pd.merge(summary_df, sc_totals[['Clean_Number', 'Scoring Chances Total']], on='Clean_Number', how='left')
@@ -153,38 +153,102 @@ if not df.empty:
         if sort_col in summary_df.columns:
             summary_df = summary_df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
-        desired_columns = []
-        for c in group_cols:
-            desired_columns.append(c)
-        
-        for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total', 'Faceoffs', 'Faceoffs won %']:
-            if c in summary_df.columns and c not in desired_columns:
+        # ----------------- KAKSI ERILLISTÄ VÄLILEHTEÄ -----------------
+        tab_standard, tab_per60 = st.tabs(["📊 Standard Summary", "⚡ Advanced Stats (Per / 60 min)"])
+
+        with tab_standard:
+            desired_columns = []
+            for c in group_cols:
                 desired_columns.append(c)
+            
+            for c in ['Games Played', 'Average TOI', 'Goals', 'Points', 'Net xG Total', 'CORSI', 'Scoring Chances Total', 'Faceoffs', 'Faceoffs won %']:
+                if c in summary_df.columns and c not in desired_columns:
+                    desired_columns.append(c)
 
-        final_summary_df = summary_df[desired_columns]
+            final_summary_df = summary_df[desired_columns]
 
-        st.subheader("Pelaajien tilastoyhteenveto")
-        
-        column_config = {
-            shirt_col: st.column_config.NumberColumn("Shirt number", width="small"),
-            player_name_col: st.column_config.TextColumn("Player", width="medium"),
-            "Games Played": st.column_config.NumberColumn("Games Played", width="small"),
-            "Average TOI": st.column_config.TextColumn("Average TOI", width="small"),
-            "Goals": st.column_config.NumberColumn("Goals", width="small"),
-            "Points": st.column_config.NumberColumn("Points", width="small"),
-            "Net xG Total": st.column_config.NumberColumn("Net xG Total", width="small", format="%.2f"),
-            "CORSI": st.column_config.NumberColumn("CORSI", width="small"),
-            "Scoring Chances Total": st.column_config.NumberColumn("Scoring Chances Total", width="small"),
-            "Faceoffs": st.column_config.NumberColumn("Faceoffs", width="small"),
-            "Faceoffs won %": st.column_config.NumberColumn("Faceoffs won %", width="small", format="%.1f%%")
-        }
+            st.subheader("Pelaajien tilastoyhteenveto")
+            
+            column_config = {
+                shirt_col: st.column_config.NumberColumn("Shirt number", width="small"),
+                player_name_col: st.column_config.TextColumn("Player", width="medium"),
+                "Games Played": st.column_config.NumberColumn("Games Played", width="small"),
+                "Average TOI": st.column_config.TextColumn("Average TOI", width="small"),
+                "Goals": st.column_config.NumberColumn("Goals", width="small"),
+                "Points": st.column_config.NumberColumn("Points", width="small"),
+                "Net xG Total": st.column_config.NumberColumn("Net xG Total", width="small", format="%.2f"),
+                "CORSI": st.column_config.NumberColumn("CORSI", width="small"),
+                "Scoring Chances Total": st.column_config.NumberColumn("Scoring Chances Total", width="small"),
+                "Faceoffs": st.column_config.NumberColumn("Faceoffs", width="small"),
+                "Faceoffs won %": st.column_config.NumberColumn("Faceoffs won %", width="small", format="%.1f%%")
+            }
 
-        st.dataframe(
-            final_summary_df, 
-            use_container_width=False, 
-            hide_index=True,
-            column_config={k: v for k, v in column_config.items() if k in final_summary_df.columns}
-        )
+            st.dataframe(
+                final_summary_df, 
+                use_container_width=False, 
+                hide_index=True,
+                column_config={k: v for k, v in column_config.items() if k in final_summary_df.columns}
+            )
+
+        with tab_per60:
+            st.subheader("Advanced Stats - Per / 60 min")
+            
+            # Etsitään oikeat sarakkeen nimet datasta
+            col_goals = next((c for c in summary_df.columns if c.strip().lower() == 'goals'), None)
+            col_points = next((c for c in summary_df.columns if c.strip().lower() == 'points'), None)
+            col_xg = next((c for c in summary_df.columns if 'expected' in c.lower() or c.strip().lower() == 'xg'), None)
+            col_net_xg = "Net xG Total" if "Net xG Total" in summary_df.columns else None
+            col_sog = next((c for c in summary_df.columns if 'shots on goal' in c.lower()), None)
+            col_corsi = "CORSI" if "CORSI" in summary_df.columns else None
+            col_blocks = next((c for c in summary_df.columns if 'blocked' in c.lower()), None)
+
+            per60_df = summary_df[group_cols].copy()
+            if 'Games Played' in summary_df.columns:
+                per60_df['Games Played'] = summary_df['Games Played']
+            if 'Average TOI' in summary_df.columns:
+                per60_df['Average TOI'] = summary_df['Average TOI']
+
+            toi_mins = summary_df['Total_TOI_Minutes'].replace(0, 1) # Vältetään nollalla jako
+
+            if col_goals:
+                per60_df['Goals / 60'] = (summary_df[col_goals] / toi_mins * 60).round(2)
+            if col_points:
+                per60_df['Points / 60'] = (summary_df[col_points] / toi_mins * 60).round(2)
+            if col_xg:
+                per60_df['xG / 60'] = (summary_df[col_xg] / toi_mins * 60).round(2)
+            if col_net_xg:
+                per60_df['Net xG / 60'] = (summary_df[col_net_xg] / toi_mins * 60).round(2)
+            if col_sog:
+                per60_df['Shots on goal / 60'] = (summary_df[col_sog] / toi_mins * 60).round(2)
+            if col_corsi:
+                per60_df['CORSI / 60'] = (summary_df[col_corsi] / toi_mins * 60).round(2)
+            if col_blocks:
+                per60_df['Blocked shots / 60'] = (summary_df[col_blocks] / toi_mins * 60).round(2)
+
+            # Järjestetään pisteiden mukaan oletuksena
+            if 'Points / 60' in per60_df.columns:
+                per60_df = per60_df.sort_values(by='Points / 60', ascending=False).reset_index(drop=True)
+
+            per60_config = {
+                shirt_col: st.column_config.NumberColumn("Shirt number", width="small"),
+                player_name_col: st.column_config.TextColumn("Player", width="medium"),
+                "Games Played": st.column_config.NumberColumn("Games Played", width="small"),
+                "Average TOI": st.column_config.TextColumn("Average TOI", width="small"),
+                "Goals / 60": st.column_config.NumberColumn("Goals / 60", width="small", format="%.2f"),
+                "Points / 60": st.column_config.NumberColumn("Points / 60", width="small", format="%.2f"),
+                "xG / 60": st.column_config.NumberColumn("xG / 60", width="small", format="%.2f"),
+                "Net xG / 60": st.column_config.NumberColumn("Net xG / 60", width="small", format="%.2f"),
+                "Shots on goal / 60": st.column_config.NumberColumn("Shots on goal / 60", width="small", format="%.2f"),
+                "CORSI / 60": st.column_config.NumberColumn("CORSI / 60", width="small", format="%.2f"),
+                "Blocked shots / 60": st.column_config.NumberColumn("Blocked shots / 60", width="small", format="%.2f"),
+            }
+
+            st.dataframe(
+                per60_df,
+                use_container_width=False,
+                hide_index=True,
+                column_config={k: v for k, v in per60_config.items() if k in per60_df.columns}
+            )
 
     else:
         st.info("Ei löytynyt sopivia sarakkeita laskentaan.")
