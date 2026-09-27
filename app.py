@@ -46,14 +46,14 @@ def load_data():
 players_df, team_df = load_data()
 
 
-# TARKKA LUOKITTELU ANNETTUJEN SÄÄNTÖJEN MUKAAN
+# LUOKITTELU: ERÄT OMIKSI KATEGORIOIKSEENAN (Period 1, Period 2, Period 3, OT)
 def classify_descriptor(desc):
   d = str(desc).strip()
   d_lower = d.lower()
 
-  # Period
+  # Erikoiskäsittely erille, jotta jokainen erä on oma kategoriansa
   if d_lower in ["period 1", "period 2", "period 3", "ot"]:
-    return "Period"
+    return d.title() if d_lower != "ot" else "OT"
 
   # OZ
   oz_list = [
@@ -165,7 +165,7 @@ selected_games = [
     game_mapping[label] for label in selected_labels if label in game_mapping
 ]
 
-# LISÄTTY "Period" MUKAAN OLETUSKATEGORIOIHIN
+# Oletuskategoriat (mukaan lukien erät)
 default_cats = [
     c
     for c in [
@@ -175,7 +175,10 @@ default_cats = [
         "Rush",
         "PP",
         "Others",
-        "Period",
+        "Period 1",
+        "Period 2",
+        "Period 3",
+        "OT",
     ]
     if c in all_categories
 ]
@@ -225,9 +228,10 @@ if "Category" in filtered_team.columns and selected_categories:
       filtered_team["Category"].isin(selected_categories)
   ]
 
+# KPI-laskentaan käytetään oletuksena erien summia, jos niitä löytyy
 kpi_source = (
-    filtered_team[filtered_team["Category"] == "Period"]
-    if not filtered_team[filtered_team["Category"] == "Period"].empty
+    filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])]
+    if not filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])].empty
     else filtered_team
 )
 
@@ -385,7 +389,6 @@ with tab2:
 
 with tab3:
   st.subheader("Category Performance Overview (Based on Selected Metrics)")
-  # OTETTU KAIKKI KATEGORIAT MUKAAN MUKAAN LUKIEN PERIOD
   chart_source = filtered_team.copy()
   if not chart_source.empty and selected_team_metrics:
     for_metrics = [
