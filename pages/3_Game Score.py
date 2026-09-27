@@ -6,27 +6,19 @@ import plotly.express as px
 st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score -analyysityökalu (2026–2027)")
-st.write("Tämä sivu lukee automaattisesti kaikki joukkueiden välilehdet[cite: 4], laskee ja visualisoi pelaajien pelikohtaiset *Game Score* -pisteet InStat-tilastojen pohjalta[cite: 1, 2].")
+st.write("Tämä sivu lukee yhtenäistä Master-taulukkoa, laskee ja visualisoi pelaajien pelikohtaiset *Game Score* -pisteet InStat-tilastojen pohjalta.")
 
-# Tiedoston lataus
+# Tiedoston lataus (oletetaan, että tiedot ovat nyt yhdessä taulukossa / oletusvälilehdellä)
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
 @st.cache_data
 def load_data(file_path):
     try:
-        # Luetaan KAIKKI välilehdet sanakirjana (sheet_name=None), jotta saadaan kaikkien joukkueiden data mukaan
-        excel_data = pd.read_excel(file_path, sheet_name=None)
+        # Luetaan suoraan tiedosto (ensimmäinen välilehti tai oletustaulukko)
+        df = pd.read_excel(file_path)
         
-        df_list = []
-        for sheet_name, sheet_df in excel_data.items():
-            # Siivotaan sarakkeiden nimet
-            sheet_df.columns = sheet_df.columns.str.strip()
-            # Tallennetaan halutessaan tiedoksi myös alkuperäinen välilehti/joukkue
-            sheet_df['Team_Sheet'] = sheet_name
-            df_list.append(sheet_df)
-            
-        # Yhdistetään kaikkien välilehtien rivit yhdeksi DataFrameksi
-        df = pd.concat(df_list, ignore_index=True)
+        # Muutetaan sarakkeiden nimet turvallisesti merkkijonoiksi ja siivotaan välilyönnit
+        df.columns = [str(col).strip() for col in df.columns]
         
         # Korjataan Date-sarake pelkiksi päivämääriksi
         if 'Date' in df.columns:
@@ -58,7 +50,7 @@ else:
 
     # Lasketaan puhtaat arvot nollakäsittelyllä
     df['Goals_clean'] = get_col(df, goals_col)
-    df['Assists_clean'] = get_col(df, assists_clean if 'assists_clean' in locals() else assists_col)
+    df['Assists_clean'] = get_col(df, assists_col)
     df['Shots_clean'] = get_col(df, shots_col)
     df['NetXG_clean'] = get_col(df, net_xg_col)
     df['FW_clean'] = get_col(df, fw_col)
@@ -73,18 +65,19 @@ else:
         ((df['FW_clean'] - df['FL_clean']) * 0.05)
     )
 
-    player_col = next((c for c in df.columns if 'player' in c.lower()), df.columns[5] if len(df.columns) > 5 else df.columns[0])
+    player_col = next((c for c in df.columns if 'player' in c.lower()), None)
+    team_col = next((c for c in df.columns if c.lower() == 'team'), None)
     opponent_col = next((c for c in df.columns if 'opponent' in c.lower()), None)
 
     # --- SIVUPALKKI: SUODATTIMET ---
     st.sidebar.header("🔍 Suodattimet")
     
-    # Valitse joukkue (Excelin välilehden mukaan)
-    if 'Team_Sheet' in df.columns:
-        kaikki_tiimit = sorted(df['Team_Sheet'].dropna().unique())
-        valitut_tiimit = st.sidebar.multiselect("Valitse joukkue (Välilehti):", kaikki_tiimit, default=kaikki_tiimit)
+    # Joukkue-suodatin (Team-sarakkeen mukaan)
+    if team_col:
+        kaikki_tiimit = sorted(df[team_col].dropna().unique())
+        valitut_tiimit = st.sidebar.multiselect("Valitse oma joukkue:", kaikki_tiimit, default=kaikki_tiimit)
         if valitut_tiimit:
-            df = df[df['Team_Sheet'].isin(valitut_tiimit)]
+            df = df[df[team_col].isin(valitut_tiimit)]
 
     # Vastustaja-suodatin
     if opponent_col:
@@ -93,49 +86,52 @@ else:
         if valitut_vastustajat:
             df = df[df[opponent_col].isin(valitut_vastustajat)]
 
-    # Välilehdet sovelluksessa[cite: 3]
-    tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys[cite: 3]", "🏆 Ottelun Leaderboard[cite: 3]", "📁 Raakadata[cite: 3]"])
+    # Välilehdet sovelluksessa
+    tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Ottelun Leaderboard", "📁 Raakadata"])
 
     with tab1:
-        st.subheader("Pelaajan kehityskäyrä kauden aikana[cite: 3]")
+        st.subheader("Pelaajan kehityskäyrä kauden aikana")
         
-        pelaajat = sorted(df[player_col].dropna().unique())
-        if len(pelaajat) > 0:
-            valittu_pelaaja = st.selectbox("Valitse tarkasteltava pelaaja:", pelaajat)
+        if player_col:
+            pelaajat = sorted(df[player_col].dropna().unique())
+            if len(pelaajat) > 0:
+                valittu_pelaaja = st.selectbox("Valitse tarkasteltava pelaaja:", pelaajat)
 
-            # Suodatetaan pelaajan data
-            pelaaja_df = df[df[player_col] == valittu_pelaaja].sort_values(by='Date')
+                # Suodatetaan pelaajan data
+                pelaaja_df = df[df[player_col] == valittu_pelaaja].sort_values(by='Date')
 
-            if not pelaaja_df.empty:
-                # Yläreunan metriikkakortit
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Pelatut ottelut", len(pelaaja_df))
-                with col2:
-                    st.metric("Keskiarvo Game Score", round(pelaaja_df['Game_Score'].mean(), 2))
-                with col3:
-                    st.metric("Kokonaismaalit", int(pelaaja_df['Goals_clean'].sum()))
-                with col4:
-                    st.metric("Kokonaisyvätöt", int(pelaaja_df['Assists_clean'].sum()))
+                if not pelaaja_df.empty:
+                    # Yläreunan metriikkakortit
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Pelatut ottelut", len(pelaaja_df))
+                    with col2:
+                        st.metric("Keskiarvo Game Score", round(pelaaja_df['Game_Score'].mean(), 2))
+                    with col3:
+                        st.metric("Kokonaismaalit", int(pelaaja_df['Goals_clean'].sum()))
+                    with col4:
+                        st.metric("Kokonaisyvätöt", int(pelaaja_df['Assists_clean'].sum()))
 
-                # Viivakaavio
-                fig = px.line(
-                    pelaaja_df, 
-                    x='Date', 
-                    y='Game_Score', 
-                    markers=True,
-                    labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
-                    title=f"Pelaajan {valittu_pelaaja} Game Score otteluhistoria"
-                )
-                fig.update_layout(xaxis_type='category')
-                st.plotly_chart(fig, use_container_width=True)
+                    # Viivakaavio
+                    fig = px.line(
+                        pelaaja_df, 
+                        x='Date', 
+                        y='Game_Score', 
+                        markers=True,
+                        labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
+                        title=f"Pelaajan {valittu_pelaaja} Game Score otteluhistoria"
+                    )
+                    fig.update_layout(xaxis_type='category')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Valitulla pelaajalla ei ole tilastomerkintöjä valituilla suodattimilla.")
             else:
-                st.info("Valitulla pelaajalla ei ole tilastomerkintöjä valituilla suodattimilla.")
+                st.warning("Ei löytynyt pelaajia annetuilla suodattimilla.")
         else:
-            st.warning("Ei löytynyt pelaajia annetuilla suodattimilla.")
+            st.error("Pelaajasaraketta ('Player') ei löytynyt taulukosta.")
 
     with tab2:
-        st.subheader("Ottelukohtainen Leaderboard[cite: 3]")
+        st.subheader("Ottelukohtainen Leaderboard")
         
         date_col = 'Date' if 'Date' in df.columns else None
         
@@ -145,10 +141,11 @@ else:
             
             peli_df = df[df['Ottelu_info'] == valittu_peli].sort_values(by='Game_Score', ascending=False)
             
-            st.dataframe(peli_df[[player_col, 'Game_Score', 'Goals_clean', 'Assists_clean', 'Shots_clean', 'NetXG_clean', 'Team_Sheet']], use_container_width=True)
+            naytettavat_sarakkeet = [c for c in [player_col, team_col, 'Game_Score', 'Goals_clean', 'Assists_clean', 'Shots_clean', 'NetXG_clean'] if c in peli_df.columns]
+            st.dataframe(peli_df[naytettavat_sarakkeet], use_container_width=True)
         else:
             st.warning("Päivämäärä- tai vastustajatietoja ei löytynyt taulukosta.")
 
     with tab3:
-        st.subheader("Raakadata ja lasketut Game Score -pisteet[cite: 3]")
+        st.subheader("Raakadata ja lasketut Game Score -pisteet")
         st.dataframe(df, use_container_width=True)
