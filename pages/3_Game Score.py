@@ -6,15 +6,15 @@ import plotly.express as px
 st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score -analyysityökalu (2026–2027)")
-st.write("Tämä sivu lukee yhtenäistä Master-taulukkoa, laskee ja visualisoi pelaajien pelikohtaiset *Game Score* -pisteet InStat-tilastojen pohjalta.")
+st.write("Tämä sivu lukee Master-taulukkoa, laskee ja visualisoi pelaajien pelikohtaiset *Game Score* -pisteet sekä kausitilastot InStat-tilastojen pohjalta.")
 
-# Tiedoston lataus (oletetaan, että tiedot ovat nyt yhdessä taulukossa / oletusvälilehdellä)
+# Tiedoston lataus
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
 @st.cache_data
 def load_data(file_path):
     try:
-        # Luetaan suoraan tiedosto (ensimmäinen välilehti tai oletustaulukko)
+        # Luetaan suoraan tiedosto (oletustiedosto / ensimmäinen välilehti)
         df = pd.read_excel(file_path)
         
         # Muutetaan sarakkeiden nimet turvallisesti merkkijonoiksi ja siivotaan välilyönnit
@@ -72,7 +72,7 @@ else:
     # --- SIVUPALKKI: SUODATTIMET ---
     st.sidebar.header("🔍 Suodattimet")
     
-    # Joukkue-suodatin (Team-sarakkeen mukaan)
+    # Joukkue-suodatin
     if team_col:
         kaikki_tiimit = sorted(df[team_col].dropna().unique())
         valitut_tiimit = st.sidebar.multiselect("Valitse oma joukkue:", kaikki_tiimit, default=kaikki_tiimit)
@@ -87,7 +87,7 @@ else:
             df = df[df[opponent_col].isin(valitut_vastustajat)]
 
     # Välilehdet sovelluksessa
-    tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Ottelun Leaderboard", "📁 Raakadata"])
+    tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Kausitilastot & Leaderboard", "📁 Raakadata"])
 
     with tab1:
         st.subheader("Pelaajan kehityskäyrä kauden aikana")
@@ -131,20 +131,50 @@ else:
             st.error("Pelaajasaraketta ('Player') ei löytynyt taulukosta.")
 
     with tab2:
-        st.subheader("Ottelukohtainen Leaderboard")
-        
-        date_col = 'Date' if 'Date' in df.columns else None
-        
-        if date_col and opponent_col:
-            df['Ottelu_info'] = df[date_col].astype(str) + " vs " + df[opponent_col].astype(str)
-            valittu_peli = st.selectbox("Valitse ottelu:", sorted(df['Ottelu_info'].unique()))
+        st.subheader("🏆 Pelaajien Leaderboard (Kausitilastot)")
+        st.write("Tässä näkyvät pelaajien yhteenlasketut ja keskimääräiset tilastot valittujen suodattimien (joukkue/vastustaja) ajalta.")
+
+        if player_col:
+            # Ryhmitellään data pelaajan (ja tarvittaessa joukkueen) mukaan
+            agg_dict = {
+                'Game_Score': ['count', 'mean', 'sum'],
+                'Goals_clean': 'sum',
+                'Assists_clean': 'sum',
+                'Shots_clean': 'sum',
+                'NetXG_clean': 'sum'
+            }
             
-            peli_df = df[df['Ottelu_info'] == valittu_peli].sort_values(by='Game_Score', ascending=False)
+            if team_col in df.columns:
+                leaderboard = df.groupby([player_col, team_col]).agg(agg_dict).reset_index()
+                leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Net xG']
+            else:
+                leaderboard = df.groupby([player_col]).agg(agg_dict).reset_index()
+                leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Net xG']
+
+            # Järjestysvalinta käyttäjälle
+            jarjestys_peruste = st.radio(
+                "Järjestä taulukko:",
+                ["Game Score (Keskiarvo)", "Game Score (Yhteensä)", "Maalit (Yhteensä)"],
+                horizontal=True
+            )
+
+            sort_col_map = {
+                "Game Score (Keskiarvo)": "GS Keskiarvo",
+                "Game Score (Yhteensä)": "GS Yhteensä",
+                "Maalit (Yhteensä)": "Maalit"
+            }
             
-            naytettavat_sarakkeet = [c for c in [player_col, team_col, 'Game_Score', 'Goals_clean', 'Assists_clean', 'Shots_clean', 'NetXG_clean'] if c in peli_df.columns]
-            st.dataframe(peli_df[naytettavat_sarakkeet], use_container_width=True)
+            leaderboard = leaderboard.sort_values(by=sort_col_map[jarjestys_peruste], ascending=False)
+
+            # Pyöristetään desimaalit siisteiksi
+            leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
+            leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
+            leaderboard['Net xG'] = leaderboard['Net xG'].round(2)
+
+            # Näytetään taulukko
+            st.dataframe(leaderboard, use_container_width=True, hide_index=True)
         else:
-            st.warning("Päivämäärä- tai vastustajatietoja ei löytynyt taulukosta.")
+            st.error("Pelaajasaraketta ei löytynyt.")
 
     with tab3:
         st.subheader("Raakadata ja lasketut Game Score -pisteet")
