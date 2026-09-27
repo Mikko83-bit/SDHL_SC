@@ -55,7 +55,7 @@ def classify_descriptor(desc):
   if d_lower in ["period 1", "period 2", "period 3", "ot"]:
     return "Period"
 
-  # OZ (tarkat vastineet kirjainkoolla tai pienillä)
+  # OZ
   oz_list = [
       "oz tip",
       "oz rr pass",
@@ -93,7 +93,7 @@ def classify_descriptor(desc):
   if d_lower in other_list:
     return "Others"
 
-  return "Others"  # Oletusarvo, jos jokin ei osu listaan
+  return "Others"
 
 
 team_df["Category"] = team_df["Descriptor"].apply(classify_descriptor)
@@ -165,9 +165,18 @@ selected_games = [
     game_mapping[label] for label in selected_labels if label in game_mapping
 ]
 
+# LISÄTTY "Period" MUKAAN OLETUSKATEGORIOIHIN
 default_cats = [
     c
-    for c in ["OZ", "Takeaways", "Turnovers", "Rush", "PP", "Others"]
+    for c in [
+        "OZ",
+        "Takeaways",
+        "Turnovers",
+        "Rush",
+        "PP",
+        "Others",
+        "Period",
+    ]
     if c in all_categories
 ]
 selected_categories = st.sidebar.multiselect(
@@ -376,7 +385,8 @@ with tab2:
 
 with tab3:
   st.subheader("Category Performance Overview (Based on Selected Metrics)")
-  chart_source = filtered_team[filtered_team["Category"] != "Period"]
+  # OTETTU KAIKKI KATEGORIAT MUKAAN MUKAAN LUKIEN PERIOD
+  chart_source = filtered_team.copy()
   if not chart_source.empty and selected_team_metrics:
     for_metrics = [
         m
