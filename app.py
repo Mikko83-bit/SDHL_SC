@@ -51,11 +51,9 @@ def classify_descriptor(desc):
   d = str(desc).strip()
   d_lower = d.lower()
 
-  # Erikoiskäsittely erille, jotta jokainen erä on oma kategoriansa
   if d_lower in ["period 1", "period 2", "period 3", "ot"]:
     return d.title() if d_lower != "ot" else "OT"
 
-  # OZ
   oz_list = [
       "oz tip",
       "oz rr pass",
@@ -68,27 +66,22 @@ def classify_descriptor(desc):
   if d_lower in oz_list:
     return "OZ"
 
-  # Rush
   rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
   if d_lower in rush_list:
     return "Rush"
 
-  # PP
   pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
   if d_lower in pp_list:
     return "PP"
 
-  # Takeaways
   ta_list = ["ta dz", "ta nz", "ta oz"]
   if d_lower in ta_list:
     return "Takeaways"
 
-  # Turnovers
   to_list = ["turnover dz", "turnover oz", "turnover nz"]
   if d_lower in to_list:
     return "Turnovers"
 
-  # Others
   other_list = ["empty net", "pk", "faceoff"]
   if d_lower in other_list:
     return "Others"
@@ -165,7 +158,6 @@ selected_games = [
     game_mapping[label] for label in selected_labels if label in game_mapping
 ]
 
-# Oletuskategoriat (mukaan lukien erät)
 default_cats = [
     c
     for c in [
@@ -228,7 +220,6 @@ if "Category" in filtered_team.columns and selected_categories:
       filtered_team["Category"].isin(selected_categories)
   ]
 
-# KPI-laskentaan käytetään oletuksena erien summia, jos niitä löytyy
 kpi_source = (
     filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])]
     if not filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])].empty
@@ -245,6 +236,8 @@ total_ga = (
     if "Goal Against" in kpi_source.columns
     else 0
 )
+goals_net = total_gf - total_ga
+
 total_cf = (
     int(kpi_source["Chance For"].sum() + kpi_source["PP chance"].sum())
     if "Chance For" in kpi_source.columns
@@ -255,13 +248,16 @@ total_ca = (
     if "Chance Against" in kpi_source.columns
     else 0
 )
-total_net = (total_gf + total_cf) - (total_ga + total_ca)
+chances_net = total_cf - total_ca
 
+total_net = goals_net + chances_net
+
+# Uusi KPI-asettelu: Goals Total, Chances Total ja näiden erittelyt / nettotulokset
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Goals For", total_gf)
-col2.metric("Goals Against", total_ga)
-col3.metric("Scoring Chances For", total_cf)
-col4.metric("Chances Against", total_ca)
+col1.metric("Goals For / Against", f"{total_gf} / {total_ga}", f"{goals_net:+d}")
+col2.metric("Chances For / Against", f"{total_cf} / {total_ca}", f"{chances_net:+d}")
+col3.metric("Goals Total (GF)", total_gf)
+col4.metric("Chances Total (CF)", total_cf)
 col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
@@ -274,7 +270,6 @@ with tab1:
   st.subheader("Team Statistics by Category & Descriptor")
   if not filtered_team.empty:
     base_cols = ["Category", "Descriptor"]
-
     desired_order = [
         "Goal For",
         "Chance For",
@@ -285,18 +280,15 @@ with tab1:
         "PP goal ag",
         "PP chance ag",
     ]
-
     available_selected = [
         c
         for c in desired_order
         if c in selected_team_metrics and c in filtered_team.columns
     ]
-
     num_cols = filtered_team.select_dtypes(include=["number"]).columns.tolist()
     num_cols = [c for c in num_cols if c != "Game"]
 
     team_summary = filtered_team.groupby(base_cols)[num_cols].sum().reset_index()
-
     cols_to_show = base_cols + available_selected
     extra_cols = [
         c for c in team_summary.columns if c not in cols_to_show and c not in base_cols
