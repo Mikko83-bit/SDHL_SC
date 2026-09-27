@@ -46,28 +46,54 @@ def load_data():
 players_df, team_df = load_data()
 
 
+# TARKKA LUOKITTELU ANNETTUJEN SÄÄNTÖJEN MUKAAN
 def classify_descriptor(desc):
-  d = str(desc).lower().strip()
-  if d in ["period 1", "period 2", "period 3", "ot"]:
-    return "Periods"
-  elif "turnover" in d:
-    return "Turnovers"
-  elif d.startswith("ta ") or " ta " in d or d.startswith("ta"):
-    if any(zone in d for zone in ["oz", "dz", "nz"]):
-      return "TA"
-    if d.replace(" ", "").startswith("ta"):
-      return "TA"
+  d = str(desc).strip()
+  d_lower = d.lower()
 
-  if "oz" in d:
+  # Period
+  if d_lower in ["period 1", "period 2", "period 3", "ot"]:
+    return "Period"
+
+  # OZ (tarkat vastineet kirjainkoolla tai pienillä)
+  oz_list = [
+      "oz tip",
+      "oz rr pass",
+      "oz shot+screen",
+      "oz 1 area",
+      "oz crash the net",
+      "oz reb",
+      "oz bl+screen",
+  ]
+  if d_lower in oz_list:
     return "OZ"
-  elif "pp" in d:
-    return "PP"
-  elif "rush" in d:
+
+  # Rush
+  rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
+  if d_lower in rush_list:
     return "Rush"
-  elif "ta" in d:
-    return "TA"
-  else:
+
+  # PP
+  pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
+  if d_lower in pp_list:
+    return "PP"
+
+  # Takeaways
+  ta_list = ["ta dz", "ta nz", "ta oz"]
+  if d_lower in ta_list:
+    return "Takeaways"
+
+  # Turnovers
+  to_list = ["turnover dz", "turnover oz", "turnover nz"]
+  if d_lower in to_list:
+    return "Turnovers"
+
+  # Others
+  other_list = ["empty net", "pk", "faceoff"]
+  if d_lower in other_list:
     return "Others"
+
+  return "Others"  # Oletusarvo, jos jokin ei osu listaan
 
 
 team_df["Category"] = team_df["Descriptor"].apply(classify_descriptor)
@@ -140,7 +166,9 @@ selected_games = [
 ]
 
 default_cats = [
-    c for c in ["OZ", "TA", "Turnovers", "Rush", "PP", "Others"] if c in all_categories
+    c
+    for c in ["OZ", "Takeaways", "Turnovers", "Rush", "PP", "Others"]
+    if c in all_categories
 ]
 selected_categories = st.sidebar.multiselect(
     "Select Category", options=all_categories, default=default_cats
@@ -189,8 +217,8 @@ if "Category" in filtered_team.columns and selected_categories:
   ]
 
 kpi_source = (
-    filtered_team[filtered_team["Category"] == "Periods"]
-    if not filtered_team[filtered_team["Category"] == "Periods"].empty
+    filtered_team[filtered_team["Category"] == "Period"]
+    if not filtered_team[filtered_team["Category"] == "Period"].empty
     else filtered_team
 )
 
@@ -234,7 +262,6 @@ with tab1:
   if not filtered_team.empty:
     base_cols = ["Category", "Descriptor"]
 
-    # PAKOTETTU JÄRJESTYS VAIN TÄHÄN TAULUKKOON
     desired_order = [
         "Goal For",
         "Chance For",
@@ -349,7 +376,7 @@ with tab2:
 
 with tab3:
   st.subheader("Category Performance Overview (Based on Selected Metrics)")
-  chart_source = filtered_team[filtered_team["Category"] != "Periods"]
+  chart_source = filtered_team[filtered_team["Category"] != "Period"]
   if not chart_source.empty and selected_team_metrics:
     for_metrics = [
         m
