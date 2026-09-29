@@ -215,39 +215,34 @@ else:
     with tab2:
         st.subheader("🏆 Pelaajien Leaderboard (Kausitilastot)")
         if player_col:
-            agg_dict = {
-                'Game_Score': ['count', 'mean', 'sum'],
-                'Goals_clean': 'sum',
-                'Assists_clean': 'sum',
-                'Shots_clean': 'sum'
-            }
-            if col_toi:
-                agg_dict['TOI_clean'] = 'mean'
-            if col_pos:
-                agg_dict['Pos_clean'] = 'first'
-
             group_cols = [player_col]
             if team_col in df_filtered.columns:
                 group_cols.append(team_col)
             if col_pos:
                 group_cols.append('Pos_clean')
 
-            leaderboard = df_filtered.groupby(group_cols).agg(agg_dict).reset_index()
-            
-            # Rakennetaan sarakkeet dynaamisesti sen mukaan mitä ryhmittelysarakkeitä ja aggregaatteja tuli mukaan
-            cols = ['Pelaaja']
-            if team_col in df_filtered.columns:
-                cols.append('Joukkue')
-            if col_pos:
-                cols.append('Pelipaikka')
-            
-            cols.extend(['Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset'])
+            # Käytetään NamedAgg-määrittelyä, jotta sarakkeiden nimet pysyvät puhtaina ilman monitasoista MultiIndex-rakennetta
+            agg_kwargs = {
+                'Pelit': pd.NamedAgg(column='Game_Score', aggfunc='count'),
+                'GS Keskiarvo': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
+                'GS Yhteensä': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
+                'Maalit': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
+                'Syötöt': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
+                'Laukaukset': pd.NamedAgg(column='Shots_clean', aggfunc='sum')
+            }
             if col_toi:
-                cols.append('Keskim. Peliaika (min)')
+                agg_kwargs['Keskim. Peliaika (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
 
-            # Varmistetaan että sarakkeiden määrä varmasti täsmää
-            if len(leaderboard.columns) == len(cols):
-                leaderboard.columns = cols
+            leaderboard = df_filtered.groupby(group_cols).agg(**agg_kwargs).reset_index()
+
+            # Nimetään ryhmittelysarakkeet siistiksi
+            rename_map = {player_col: 'Pelaaja'}
+            if team_col in df_filtered.columns:
+                rename_map[team_col] = 'Joukkue'
+            if col_pos:
+                rename_map['Pos_clean'] = 'Pelipaikka'
+            
+            leaderboard = leaderboard.rename(columns=rename_map)
 
             # Suodatetaan peliajan mukaan jos sarake löytyy
             if col_toi and min_toi_filter > 0 and 'Keskim. Peliaika (min)' in leaderboard.columns:
