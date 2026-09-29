@@ -42,6 +42,25 @@ else:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
         return 0
 
+    # Apufunktio peliajan (MM:SS tai pelkkä luku) muuntamiseksi desimaaliminuuteiksi
+    def parse_toi(val):
+        if pd.isna(val):
+            return 0.0
+        val_str = str(val).strip()
+        if ':' in val_str:
+            try:
+                parts = val_str.split(':')
+                minutes = float(parts[0])
+                seconds = float(parts[1])
+                return minutes + (seconds / 60.0)
+            except:
+                return 0.0
+        else:
+            try:
+                return float(val_str)
+            except:
+                return 0.0
+
     # Etsitään sarakkeet tarkkojen nimien perusteella
     col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
     col_a1 = next((c for c in df.columns if c.lower() == 'first assist'), None)
@@ -58,6 +77,9 @@ else:
     
     col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
     col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
+
+    # Etsitään mahdollinen peliaikasarake (esim. Time on ice, TOI, minutes, min)
+    col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
 
     # Muutetaan puhtaiksi numeerisiksi sarjoiksi
     g = get_col(df, col_goals)
@@ -79,6 +101,12 @@ else:
     df['Assists_clean'] = a1 + a2
     df['Shots_clean'] = sog
     df['Block_clean'] = blk
+    
+    if col_toi:
+        # Muunnetaan MM:SS -muotoiset ajat desimaaleiksi tätä saraketta varten
+        df['TOI_clean'] = df[col_toi].apply(parse_toi)
+    else:
+        df['TOI_clean'] = 0.0
 
     # Game Score -kaava
     df['Game_Score'] = (
@@ -120,15 +148,18 @@ else:
         if valitut_vastustajat:
             df_filtered = df_filtered[df_filtered[opponent_col].isin(valitut_vastustajat)]
 
-    # Lisätään suodatin vertailupohjan rajaamiseksi (esim. vähimmäisottelumäärä per pelaaja keskiarvojen laskentaan)
+    # Peliaikasuodatin vertailupohjalle, jos peliaikasarake löytyy datasta
     st.sidebar.subheader("⚖️ Keskiarvojen vertailupohja")
-    min_pelit_vertailu = st.sidebar.slider("Vähintään pelatut ottelut (keskiarvojen vertailuun):", 1, 20, 1)
+    min_toi_filter = 0.0
+    if col_toi:
+        min_toi_filter = st.sidebar.slider("Min. keskimääräinen peliaika (min/ottelu):", 0.0, 30.0, 0.0, 0.5)
+    else:
+        st.sidebar.info("Peliaikasaraketta (Time on ice) ei löytynyt automaattisesti datasta.")
 
-    # Lasketaan pelaajakohtaiset ottelumäärät rajauksen tekemiseksi
-    if player_col:
-        pelaaja_peli_counts = df_filtered.groupby(player_col).size()
-        vakituiset_pelaajat = pelaaja_peli_counts[pelaaja_peli_counts >= min_pelit_vertailu].index
-        # Datapisteet vertailtaville keskiarvoille (rajataan vain vähän pelanneet pois jos halutaan)
+    # Rajataan verrokkijoukko keskiarvoja varten
+    if player_col and col_toi:
+        pelaaja_toi_keskiarvot = df_filtered.groupby(player_col)['TOI_clean'].mean()
+        vakituiset_pelaajat = pelaaja_toi_keskiarvot[pelaaja_toi_keskiarvot >= min_toi_filter].index
         df_vertailu = df_filtered[df_filtered[player_col].isin(vakituiset_pelaajat)]
     else:
         df_vertailu = df_filtered
@@ -158,7 +189,7 @@ else:
                     with col3:
                         st.metric("Kokonaismaalit", int(pelaaja_df['Goals_clean'].sum()))
                     with col4:
-                        st.metric("Kokonaisyvätöt", int(pelaaja_df['Assists_clean'].sum()))
+                        st.metric("Kokonaisyötöt", int(pelaaja_df['Assists_clean'].sum()))
 
                     fig = px.line(
                         pelaaja_df, x='Date', y='Game_Score', markers=True,
@@ -177,15 +208,27 @@ else:
                 'Assists_clean': 'sum',
                 'Shots_clean': 'sum'
             }
+            if col_toi:
+                agg_dict['TOI_clean'] = 'mean'
+
             if team_col in df_filtered.columns:
                 leaderboard = df_filtered.groupby([player_col, team_col]).agg(agg_dict).reset_index()
-                leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
+                if col_toi:
+                    leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Keskim. Peliaika (min)']
+                else:
+                    leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
             else:
                 leaderboard = df_filtered.groupby([player_col]).agg(agg_dict).reset_index()
-                leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
+                if col_toi:
+                    leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Keskim. Peliaika (min)']
+                else:
+                    leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
 
-            # Suodatetaan leaderboardiin myös valittu vähimmäisottelumäärä
-            leaderboard = leaderboard[leaderboard['Pelit'] >= min_pelit_vertailu]
+            # Suodatetaan peliajan mukaan jos sarake löytyy
+            if col_toi and min_toi_filter > 0:
+                leaderboard = leaderboard[leaderboard['Keskim. Peliaika (min)'] >= min_toi_filter]
+                if col_toi:
+                    leaderboard['Keskim. Peliaika (min)'] = leaderboard['Keskim. Peliaika (min)'].round(2)
 
             leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
             leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
@@ -204,7 +247,7 @@ else:
             if not pelaaja_df.empty:
                 pelaajan_oma_ka = pelaaja_df['Game_Score'].mean()
                 
-                # Lasketaan keskiarvot suodatetusta (vähintään X peliä pelanneiden) verrokkijoukosta
+                # Lasketaan keskiarvot rajatusta verrokkijoukosta
                 sdhl_ka = df_vertailu['Game_Score'].mean()
                 
                 if team_col:
