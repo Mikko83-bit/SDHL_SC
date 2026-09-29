@@ -9,7 +9,7 @@ st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", lay
 st.title("🏒 SDHL Game Score -analyysityökalu (2026–2027)")
 st.write("Tämä sivu laskee pelaajien pelikohtaiset *Game Score* -pisteet xG-pohjaisella kaavalla suoraan raakadatasta.")
 
-# Tiedoston lataus (huomioi tarvittaessa polku, jos tiedosto on pääkansiossa '../')
+# Tiedoston lataus
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
 @st.cache_data
@@ -21,7 +21,6 @@ def load_data(file_path):
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         return df
     except Exception as e:
-        # Kokeillaan tarvittaessa hakea kansiota ylempää, jos sivu on pages-kansiossa
         try:
             df = pd.read_excel(f"../{file_path}")
             df.columns = [str(col).strip() for col in df.columns]
@@ -117,11 +116,11 @@ else:
         if valitut_vastustajat:
             df = df[df[opponent_col].isin(valitut_vastustajat)]
 
-    # Luodaan välilehdet turvallisesti kerralla
+    # Luodaan välilehdet kerralla
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Pelaajaprofiili & Kehitys", 
         "🏆 Kausitilastot & Leaderboard", 
-        "🕸️ Pelaajavertailu (Tutka)", 
+        "📈 Ottelukohtaiset pisteet", 
         "📁 Raakadata"
     ])
 
@@ -174,78 +173,71 @@ else:
             st.dataframe(leaderboard.sort_values(by="GS Keskiarvo", ascending=False), use_container_width=True, hide_index=True)
 
     with tab3:
-        st.subheader("🕸️ Pelaajan Game Score -komponentit vs Joukkue & SDHL")
+        st.subheader("📊 Pelaajan ottelukohtainen Game Score vs Keskiarvot")
         
         if player_col:
             pelaajat = sorted(df[player_col].dropna().unique())
-            valittu_pelaaja_tutka = st.selectbox("Valitse pelaaja tutkavertailuun:", pelaajat, key='radar_player')
+            valittu_pelaaja_pylvas = st.selectbox("Valitse pelaaja tarkasteluun:", pelaajat, key='bar_player')
             
-            def laske_komponentit(subset):
-                g_sub = get_col(subset, col_goals)
-                a1_sub = get_col(subset, col_a1)
-                a2_sub = get_col(subset, col_a2)
-                sog_sub = get_col(subset, col_sog)
-                blk_sub = get_col(subset, col_blk)
+            pelaaja_df = df[df[player_col] == valittu_pelaaja_pylvas].sort_values(by='Date')
+            
+            if not pelaaja_df.empty:
+                pelaajan_oma_ka = pelaaja_df['Game_Score'].mean()
+                sdhl_ka = df['Game_Score'].mean()
                 
-                return [
-                    subset['Game_Score'].mean(),
-                    (0.75 * g_sub + 0.7 * a1_sub + 0.55 * a2_sub).mean(),
-                    (0.075 * sog_sub).mean(),
-                    (0.05 * blk_sub).mean(),
-                    (0.05 * get_col(subset, col_xg_on)).mean()
-                ]
+                if team_col:
+                    pelaajan_tiimi = pelaaja_df[team_col].iloc[0]
+                    tiimi_df = df[df[team_col] == pelaajan_tiimi]
+                    tiimi_ka = tiimi_df['Game_Score'].mean()
+                    tiimi_nimi = pelaajan_tiimi
+                else:
+                    tiimi_ka = None
+                    tiimi_nimi = "Joukkue"
 
-            labels_list = ['Game Score (Keskiarvo)', 'Tehopisteet (GS)', 'Laukaukset (GS)', 'Blokit (GS)', 'xG-vaikutus (GS)']
+                fig_bar = px.bar(
+                    pelaaja_df, 
+                    x='Date', 
+                    y='Game_Score',
+                    title=f"Pelaajan {valittu_pelaaja_pylvas} ottelukohtainen Game Score",
+                    labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
+                    text_auto='.2f'
+                )
 
-            pelaaja_all = df[df[player_col] == valittu_pelaaja_tutka]
-            pelaaja_means = laske_komponentit(pelaaja_all)
+                # SDHL-keskiarvo poikkiviivana
+                fig_bar.add_hline(
+                    y=sdhl_ka, 
+                    line_dash="dash", 
+                    line_color="gray", 
+                    annotation_text=f"SDHL Keskiarvo ({sdhl_ka:.2f})", 
+                    annotation_position="bottom right"
+                )
 
-            if team_col and not pelaaja_all.empty:
-                pelaajan_tiimi = pelaaja_all[team_col].iloc[0]
-                tiimi_all = df[df[team_col] == pelaajan_tiimi]
-                tiimi_means = laske_komponentit(tiimi_all)
-                tiimi_label = f"Joukkueen ({pelaajan_tiimi}) keskiarvo"
-            else:
-                tiimi_means = [0] * len(labels_list)
-                tiimi_label = "Joukkueen keskiarvo"
+                # Oman joukkueen keskiarvo poikkiviivana
+                if team_col and not pd.isna(tiimi_ka):
+                    fig_bar.add_hline(
+                        y=tiimi_ka, 
+                        line_dash="dot", 
+                        line_color="orange", 
+                        annotation_text=f"{tiimi_nimi} Keskiarvo ({tiimi_ka:.2f})", 
+                        annotation_position="top right"
+                    )
 
-            sdhl_means = laske_komponentit(df)
+                fig_bar.update_layout(
+                    xaxis_type='category',
+                    yaxis_title="Game Score",
+                    xaxis_title="Ottelupäivä"
+                )
 
-            fig_radar = go.Figure()
-
-            fig_radar.add_trace(go.Scatterpolar(
-                r=pelaaja_means + [pelaaja_means[0]],
-                theta=labels_list + [labels_list[0]],
-                fill='toself',
-                name=valittu_pelaaja_tutka,
-                line_color='cyan'
-            ))
-
-            if team_col:
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=tiimi_means + [tiimi_means[0]],
-                    theta=labels_list + [labels_list[0]],
-                    fill='toself',
-                    name=tiimi_label,
-                    line_color='orange'
-                ))
-
-            fig_radar.add_trace(go.Scatterpolar(
-                r=sdhl_means + [sdhl_means[0]],
-                theta=labels_list + [labels_list[0]],
-                fill='toself',
-                name='SDHL Keskiarvo',
-                line_color='gray',
-                opacity=0.5
-            ))
-
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True)),
-                title=f"Game Score -profiili: {valittu_pelaaja_tutka} vs Joukkue & SDHL",
-                showlegend=True
-            )
-
-            st.plotly_chart(fig_radar, use_container_width=True)
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Pelaajan ka. tässä graafissa", f"{pelaajan_oma_ka:.2f}")
+                with col2:
+                    st.metric("SDHL keskiarvo", f"{sdhl_ka:.2f}")
+                with col3:
+                    if team_col:
+                        st.metric(f"{tiimi_nimi} keskiarvo", f"{tiimi_ka:.2f}")
 
     with tab4:
         st.subheader("Raakadata ja lasketut Game Score -pisteet")
