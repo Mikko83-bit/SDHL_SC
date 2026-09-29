@@ -135,7 +135,7 @@ else:
     opponent_col = next((c for c in df.columns if 'opponent' in c.lower()), None)
 
     # --- SIVUPALKKI: SUODATTIMET ---
-    script_header = st.sidebar.header("🔍 Suodattimet")
+    st.sidebar.header("🔍 Suodattimet")
     
     # 1. Joukkueen valinta
     if team_col:
@@ -234,26 +234,30 @@ else:
 
             leaderboard = df_filtered.groupby(group_cols).agg(agg_dict).reset_index()
             
-            # Luodaan fiksummat sarakkeiden nimet riippuen siitä mitä tietoja löytyy
+            # Rakennetaan sarakkeet dynaamisesti sen mukaan mitä ryhmittelysarakkeitä ja aggregaatteja tuli mukaan
             cols = ['Pelaaja']
             if team_col in df_filtered.columns:
                 cols.append('Joukkue')
             if col_pos:
                 cols.append('Pelipaikka')
+            
             cols.extend(['Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset'])
             if col_toi:
                 cols.append('Keskim. Peliaika (min)')
 
-            leaderboard.columns = cols
+            # Varmistetaan että sarakkeiden määrä varmasti täsmää
+            if len(leaderboard.columns) == len(cols):
+                leaderboard.columns = cols
 
             # Suodatetaan peliajan mukaan jos sarake löytyy
-            if col_toi and min_toi_filter > 0:
+            if col_toi and min_toi_filter > 0 and 'Keskim. Peliaika (min)' in leaderboard.columns:
                 leaderboard = leaderboard[leaderboard['Keskim. Peliaika (min)'] >= min_toi_filter]
-                if col_toi:
-                    leaderboard['Keskim. Peliaika (min)'] = leaderboard['Keskim. Peliaika (min)'].round(2)
+                leaderboard['Keskim. Peliaika (min)'] = leaderboard['Keskim. Peliaika (min)'].round(2)
 
-            leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
-            leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
+            if 'GS Keskiarvo' in leaderboard.columns:
+                leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
+            if 'GS Yhteensä' in leaderboard.columns:
+                leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
 
             st.dataframe(leaderboard.sort_values(by="GS Keskiarvo", ascending=False), use_container_width=True, hide_index=True)
 
