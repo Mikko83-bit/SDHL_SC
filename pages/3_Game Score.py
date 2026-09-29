@@ -194,6 +194,7 @@ else:
                     tiimi_ka = None
                     tiimi_nimi = "Joukkue"
 
+                # Luodaan pylväsdiagrammi selkeämmällä värillä (esim. cyan / teal)
                 fig_bar = px.bar(
                     pelaaja_df, 
                     x='Date', 
@@ -202,37 +203,52 @@ else:
                     labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
+                fig_bar.update_traces(marker_color='#00b4d8') # Mukava kirkas sinivihreä sävy
 
-                # SDHL-keskiarvo poikkiviivana
+                # 1. SDHL-keskiarvo poikkiviivana (Harmaa)
                 fig_bar.add_hline(
                     y=sdhl_ka, 
                     line_dash="dash", 
-                    line_color="gray", 
+                    line_color="#adb5bd", 
                     annotation_text=f"SDHL Keskiarvo ({sdhl_ka:.2f})", 
-                    annotation_position="bottom right"
+                    annotation_position="bottom right",
+                    annotation_font_color="#adb5bd"
                 )
 
-                # Oman joukkueen keskiarvo poikkiviivana
+                # 2. Oman joukkueen keskiarvo poikkiviivana (Oranssi)
                 if team_col and not pd.isna(tiimi_ka):
                     fig_bar.add_hline(
                         y=tiimi_ka, 
                         line_dash="dot", 
-                        line_color="orange", 
+                        line_color="#ffb703", 
                         annotation_text=f"{tiimi_nimi} Keskiarvo ({tiimi_ka:.2f})", 
-                        annotation_position="top right"
+                        annotation_position="top right",
+                        annotation_font_color="#ffb703"
                     )
+
+                # 3. Pelaajan oma keskiarvo poikkiviivana (Vihreä / vaalea turkoosi erotukseksi)
+                fig_bar.add_hline(
+                    y=pelaajan_oma_ka, 
+                    line_dash="solid", 
+                    line_color="#2ec4b6", 
+                    annotation_text=f"Pelaajan keskiarvo ({pelaajan_oma_ka:.2f})", 
+                    annotation_position="bottom left",
+                    annotation_font_color="#2ec4b6"
+                )
 
                 fig_bar.update_layout(
                     xaxis_type='category',
                     yaxis_title="Game Score",
-                    xaxis_title="Ottelupäivä"
+                    xaxis_title="Ottelupäivä",
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
                 )
 
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Pelaajan ka. tässä graafissa", f"{pelaajan_oma_ka:.2f}")
+                    st.metric("Pelaajan keskiarvo", f"{pelaajan_oma_ka:.2f}")
                 with col2:
                     st.metric("SDHL keskiarvo", f"{sdhl_ka:.2f}")
                 with col3:
