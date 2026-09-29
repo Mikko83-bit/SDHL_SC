@@ -42,7 +42,10 @@ else:
 
     # Tunnistetaan sarakkeet InStat-datasta
     goals_col = next((c for c in df.columns if 'goal' in c.lower() and 'shot' not in c.lower() and 'x' not in c.lower()), None)
-    assists_col = next((c for c in df.columns if 'assist' in c.lower() and 'first' not in c.lower()), None)
+    
+    # Parannettu syöttöjen haku: Tarkistetaan löytyykö suoraan 'Assists', muuten lasketaan First + Second assist
+    assists_col = next((c for c in df.columns if c.lower() == 'assists'), None)
+    
     shots_col = next((c for c in df.columns if 'shots on goal' in c.lower() or c.lower() == 'shots'), None)
     net_xg_col = next((c for c in df.columns if 'net xg' in c.lower()), None)
     fw_col = next((c for c in df.columns if 'faceoffs won' in c.lower()), None)
@@ -50,13 +53,24 @@ else:
 
     # Lasketaan puhtaat arvot nollakäsittelyllä
     df['Goals_clean'] = get_col(df, goals_col)
-    df['Assists_clean'] = get_col(df, assists_col)
+    
+    if assists_col:
+        df['Assists_clean'] = get_col(df, assists_col)
+    else:
+        # Jos yhteistä 'Assists'-saraketta ei ole, lasketaan First ja Second assist yhteen turvallisesti
+        first_ast = next((c for c in df.columns if 'first assist' in c.lower()), None)
+        second_ast = next((c for c in df.columns if 'second assist' in c.lower()), None)
+        
+        val_first = pd.to_numeric(df[first_ast], errors='coerce').fillna(0) if first_ast else 0
+        val_second = pd.to_numeric(df[second_ast], errors='coerce').fillna(0) if second_ast else 0
+        df['Assists_clean'] = val_first + val_second
+
     df['Shots_clean'] = get_col(df, shots_col)
     df['NetXG_clean'] = get_col(df, net_xg_col)
     df['FW_clean'] = get_col(df, fw_col)
     df['FL_clean'] = get_col(df, fl_col)
 
-    # Game Score -laskenta
+    # Game Score -laskenta (syötöille kerroin 0.7)
     df['Game_Score'] = (
         (df['Goals_clean'] * 1.0) +
         (df['Assists_clean'] * 0.7) +
