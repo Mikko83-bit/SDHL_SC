@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score -analyysityökalu (2026–2027)")
-st.write("Tämä sivu lukee Master-taulukkoa, laskee ja visualisoi pelaajien pelikohtaiset *Game Score* -pisteet sekä kausitilastot InStat-tilastojen pohjalta.")
+st.write("Tämä sivu laskee pelaajien pelikohtaiset *Game Score* -pisteet mukautetulla kaavalla suoraan raakadatasta.")
 
 # Tiedoston lataus
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
@@ -14,16 +14,10 @@ EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 @st.cache_data
 def load_data(file_path):
     try:
-        # Luetaan suoraan tiedosto (oletustiedosto / ensimmäinen välilehti)
         df = pd.read_excel(file_path)
-        
-        # Muutetaan sarakkeiden nimet turvallisesti merkkijonoiksi ja siivotaan välilyönnit
         df.columns = [str(col).strip() for col in df.columns]
-        
-        # Korjataan Date-sarake pelkiksi päivämääriksi
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-            
         return df
     except Exception as e:
         st.error(f"Virhe tiedoston luvussa: {e}")
@@ -34,51 +28,62 @@ df = load_data(EXCEL_FILE)
 if df is None:
     st.error(f"Tiedoston '{EXCEL_FILE}' lukemisessa tapahtui virhe. Varmista, että tiedosto on oikeassa kansiossa.")
 else:
-    # Apufunktio sarakkeiden turvalliseen hakuun
+    # Apufunktio sarakkeiden turvalliseen hakuun (nollakäsittelyllä)
     def get_col(data, col_name):
         if col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
         return 0
 
-    # Tunnistetaan sarakkeet InStat-datasta tarkasti
-    goals_col = next((c for c in df.columns if 'goal' in c.lower() and 'shot' not in c.lower() and 'x' not in c.lower()), None)
-    
-    # Syötöt: Tarkistetaan 'Assists' tai lasketaan First + Second assist yhteen
-    assists_col = next((c for c in df.columns if c.lower() == 'assists'), None)
-    
-    # Laukaukset: Haetaan nimenomaan maalia kohti menneet laukaukset ('Shots on goal')
-    shots_col = next((c for c in df.columns if 'shots on goal' in c.lower()), None)
-    if not shots_col: # Varasuunnitelma, jos ei löydy tarkalla nimellä
-        shots_col = next((c for c in df.columns if 'shot' in c.lower() and 'goal' in c.lower() and 'x' not in c.lower()), None)
+    # Etsitään sarakkeet tarkkojen nimien perusteella kuvasta
+    col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
+    col_a1 = next((c for c in df.columns if c.lower() == 'first assist'), None)
+    col_a2 = next((c for c in df.columns if c.lower() == 'second assist'), None)
+    col_sog = next((c for c in df.columns if c.lower() == 'shots on goal'), None)
+    col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
+    col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
+    col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
+    col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
+    col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
+    col_cf = next((c for c in df.columns if c.lower() == 'corsipt' or c.lower() == 'corsii+'), None) # tai corsii+ riippuen kirjoitusasusta
+    col_ca = next((c for c in df.columns if c.lower() == 'corsii-'), None)
+    col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
+    col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
 
-    net_xg_col = next((c for c in df.columns if 'net xg' in c.lower()), None)
-    fw_col = next((c for c in df.columns if 'faceoffs won' in c.lower()), None)
-    fl_col = next((c for c in df.columns if 'faceoffs lost' in c.lower()), None)
+    # Muutetaan puhtaiksi numeerisiksi sarjoiksi
+    g = get_col(df, col_goals)
+    a1 = get_col(df, col_a1)
+    a2 = get_col(df, col_a2)
+    sog = get_col(df, col_sog)
+    blk = get_col(df, col_blk)
+    pd_val = get_col(df, col_pd)
+    pt_val = get_col(df, col_pt)
+    fow = get_col(df, col_fow)
+    fol = get_col(df, col_fol)
+    cf = get_col(df, col_cf)
+    ca = get_col(df, col_ca)
+    gf = get_col(df, col_gf)
+    ga = get_col(df, col_ga)
 
-    # Lasketaan puhtaat arvot nollakäsittelyllä
-    df['Goals_clean'] = get_col(df, goals_col)
-    
-    if assists_col:
-        df['Assists_clean'] = get_col(df, assists_col)
-    else:
-        first_ast = next((c for c in df.columns if 'first assist' in c.lower()), None)
-        second_ast = next((c for c in df.columns if 'second assist' in c.lower()), None)
-        val_first = pd.to_numeric(df[first_ast], errors='coerce').fillna(0) if first_ast else 0
-        val_second = pd.to_numeric(df[second_ast], errors='coerce').fillna(0) if second_ast else 0
-        df['Assists_clean'] = val_first + val_second
+    # Tallennetaan siivotut arvot tarvittaessa dataframeen näyttöä varten
+    df['Goals_clean'] = g
+    df['Assists_clean'] = a1 + a2
+    df['Shots_clean'] = sog
 
-    df['Shots_clean'] = get_col(df, shots_col)
-    df['NetXG_clean'] = get_col(df, net_xg_col)
-    df['FW_clean'] = get_col(df, fw_col)
-    df['FL_clean'] = get_col(df, fl_col)
-
-    # Game Score -laskenta
+    # Uusi tarkka Game Score -kaavasi
     df['Game_Score'] = (
-        (df['Goals_clean'] * 1.0) +
-        (df['Assists_clean'] * 0.7) +
-        (df['Shots_clean'] * 0.1) +
-        (df['NetXG_clean'] * 0.5) +
-        ((df['FW_clean'] - df['FL_clean']) * 0.05)
+        (0.75 * g) + 
+        (0.7 * a1) + 
+        (0.55 * a2) + 
+        (0.075 * sog) + 
+        (0.05 * blk) + 
+        (0.15 * pd_val) - 
+        (0.15 * pt_val) + 
+        (0.01 * fow) - 
+        (0.01 * fol) + 
+        (0.05 * cf) - 
+        (0.05 * ca) + 
+        (0.15 * gf) - 
+        (0.15 * ga)
     )
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
@@ -105,7 +110,6 @@ else:
 
     with tab1:
         st.subheader("Pelaajan kehityskäyrä kauden aikana")
-        
         if player_col:
             pelaajat = sorted(df[player_col].dropna().unique())
             if len(pelaajat) > 0:
@@ -124,10 +128,7 @@ else:
                         st.metric("Kokonaisyvätöt", int(pelaaja_df['Assists_clean'].sum()))
 
                     fig = px.line(
-                        pelaaja_df, 
-                        x='Date', 
-                        y='Game_Score', 
-                        markers=True,
+                        pelaaja_df, x='Date', y='Game_Score', markers=True,
                         labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
                         title=f"Pelaajan {valittu_pelaaja} Game Score otteluhistoria"
                     )
@@ -135,52 +136,27 @@ else:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("Valitulla pelaajalla ei ole tilastomerkintöjä valituilla suodattimilla.")
-            else:
-                st.warning("Ei löytynyt pelaajia annetuilla suodattimilla.")
-        else:
-            st.error("Pelaajasaraketta ('Player') ei löytynyt taulukosta.")
 
     with tab2:
         st.subheader("🏆 Pelaajien Leaderboard (Kausitilastot)")
-        st.write("Tässä näkyvät pelaajien yhteenlasketut ja keskimääräiset tilastot valittujen suodattimien (joukkue/vastustaja) ajalta.")
-
         if player_col:
             agg_dict = {
                 'Game_Score': ['count', 'mean', 'sum'],
                 'Goals_clean': 'sum',
                 'Assists_clean': 'sum',
-                'Shots_clean': 'sum',
-                'NetXG_clean': 'sum'
+                'Shots_clean': 'sum'
             }
-            
             if team_col in df.columns:
                 leaderboard = df.groupby([player_col, team_col]).agg(agg_dict).reset_index()
-                leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Net xG']
+                leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
             else:
                 leaderboard = df.groupby([player_col]).agg(agg_dict).reset_index()
-                leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Net xG']
-
-            jarjestys_peruste = st.radio(
-                "Järjestä taulukko:",
-                ["Game Score (Keskiarvo)", "Game Score (Yhteensä)", "Maalit (Yhteensä)"],
-                horizontal=True
-            )
-
-            sort_col_map = {
-                "Game Score (Keskiarvo)": "GS Keskiarvo",
-                "Game Score (Yhteensä)": "GS Yhteensä",
-                "Maalit (Yhteensä)": "Maalit"
-            }
-            
-            leaderboard = leaderboard.sort_values(by=sort_col_map[jarjestys_peruste], ascending=False)
+                leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
 
             leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
             leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
-            leaderboard['Net xG'] = leaderboard['Net xG'].round(2)
 
-            st.dataframe(leaderboard, use_container_width=True, hide_index=True)
-        else:
-            st.error("Pelaajasaraketta ei löytynyt.")
+            st.dataframe(leaderboard.sort_values(by="GS Keskiarvo", ascending=False), use_container_width=True, hide_index=True)
 
     with tab3:
         st.subheader("Raakadata ja lasketut Game Score -pisteet")
