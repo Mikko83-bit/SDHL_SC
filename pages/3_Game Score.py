@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 # Sivun asetukset
 st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", layout="wide")
@@ -45,7 +46,6 @@ else:
     col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
     col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
     
-    # xG on-ice -sarakkeet Corsin tilalla
     col_xg_on = next((c for c in df.columns if c.lower() == 'xgs with a player on' or c.lower() == 'xg with a player on'), None)
     col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
     
@@ -67,12 +67,13 @@ else:
     gf = get_col(df, col_gf)
     ga = get_col(df, col_ga)
 
-    # Tallennetaan siivotut arvot taulukkoon näyttöä varten
+    # Tallennetaan siivotut arvot taulukkoon
     df['Goals_clean'] = g
     df['Assists_clean'] = a1 + a2
     df['Shots_clean'] = sog
+    df['Block_clean'] = blk
 
-    # Game Score -kaava xG-arvoilla (Corsi korvattu)
+    # Game Score -kaava
     df['Game_Score'] = (
         (0.75 * g) + 
         (0.7 * a1) + 
@@ -108,15 +109,20 @@ else:
         if valitut_vastustajat:
             df = df[df[opponent_col].isin(valitut_vastustajat)]
 
-    # Välilehdet sovelluksessa
-    tab1, tab2, tab3 = tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Kausitilastot & Leaderboard", "📁 Raakadata"])
+    # Neljä välilehteä
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Pelaajaprofiili & Kehitys", 
+        "🏆 Kausitilastot & Leaderboard", 
+        "🕸️ Pelaajavertailu (Tutka)", 
+        "📁 Raakadata"
+    ])
 
     with tab1:
         st.subheader("Pelaajan kehityskäyrä kauden aikana")
         if player_col:
             pelaajat = sorted(df[player_col].dropna().unique())
             if len(pelaajat) > 0:
-                valittu_pelaaja = st.selectbox("Valitse tarkasteltava pelaaja:", pelaajat)
+                valittu_pelaaja = st.selectbox("Valitse tarkasteltava pelaaja:", pelaajat, key='tab1_player')
                 pelaaja_df = df[df[player_col] == valittu_pelaaja].sort_values(by='Date')
 
                 if not pelaaja_df.empty:
@@ -137,8 +143,6 @@ else:
                     )
                     fig.update_layout(xaxis_type='category')
                     st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Valitulla pelaajalla ei ole tilastomerkintöjä valituilla suodattimilla.")
 
     with tab2:
         st.subheader("🏆 Pelaajien Leaderboard (Kausitilastot)")
@@ -161,6 +165,73 @@ else:
 
             st.dataframe(leaderboard.sort_values(by="GS Keskiarvo", ascending=False), use_container_width=True, hide_index=True)
 
-    with tab3:
+    with tab4:
         st.subheader("Raakadata ja lasketut Game Score -pisteet")
         st.dataframe(df, use_container_width=True)
+
+    with tab3:
+        st.subheader("🕸️ Pelaajan ja joukkueen / SDHL keskiarvojen vertailu (Hämähäkkiverkko)")
+        
+        if player_col:
+            pelaajat = sorted(df[player_col].dropna().unique())
+            valittu_pelaaja_tutka = st.selectbox("Valitse pelaaja tutkavertailuun:", pelaajat, key='radar_player')
+            
+            # Määritellään muuttujat, joita verkossa tarkastellaan (ottelukohtaiset keskiarvot)
+            metrics_list = ['Game_Score', 'Goals_clean', 'Assists_clean', 'Shots_clean', 'Block_clean']
+            labels_list = ['Game Score', 'Maalit', 'Syötöt', 'Laukaukset (SOG)', 'Blokit']
+
+            # 1. Valitun pelaajan ottelukohtaiset keskiarvot
+            pelaaja_all = df[df[player_col] == valittu_pelaaja_tutka]
+            pelaaja_means = [pelaaja_all[m].mean() for m in metrics_list]
+
+            # 2. Oman joukkueen keskiarvot (jos team_col löytyy)
+            if team_col and not pelaaja_all.empty:
+                pelaajan_tiimi = pelaaja_all[team_col].iloc[0]
+                tiimi_all = df[df[team_col] == pelaajan_tiimi]
+                tiimi_means = [tiimi_all[m].mean() for m in metrics_list]
+                tiimi_label = f"Joukkueen ({pelaajan_tiimi}) keskiarvo"
+            else:
+                tiimi_means = [0] * len(metrics_list)
+                tiimi_label = "Joukkueen keskiarvo"
+
+            # 3. Koko SDHL-sarjan (kaikkien ladattujen rivien) keskiarvot
+            sdhl_means = [df[m].mean() for m in metrics_list]
+
+            # Piirretään Plotly-tutkakaavio
+            fig_radar = go.Figure()
+
+            fig_radar.add_trace(go.Scatterpolar(
+                r=pelaaja_means + [pelaaja_means[0]],
+                theta=labels_list + [labels_list[0]],
+                fill='toself',
+                name=valittu_pelaaja_tutka,
+                line_color='cyan'
+            ))
+
+            if team_col:
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=tiimi_means + [tiimi_means[0]],
+                    theta=labels_list + [labels_list[0]],
+                    fill='toself',
+                    name=tiimi_label,
+                    line_color='orange'
+                ))
+
+            fig_radar.add_trace(go.Scatterpolar(
+                r=sdhl_means + [sdhl_means[0]],
+                theta=labels_list + [labels_list[0]],
+                fill='toself',
+                name='SDHL Keskiarvo',
+                line_color='gray',
+                opacity=0.6
+            ))
+
+            fig_radar.update_layout(
+                polar=dict(
+                    radialaxis=dict(visible=True, range=[0, max(max(pelaaja_means), max(sdhl_means)) * 1.2 if max(sdhl_means) > 0 else 1])
+                ),
+                title=f"Vertailussa: {valittu_pelaaja_tutka} vs Joukkue & SDHL",
+                showlegend=True
+            )
+
+            st.plotly_chart(fig_radar, use_container_width=True)
