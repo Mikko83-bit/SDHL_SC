@@ -78,8 +78,9 @@ else:
     col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
     col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
 
-    # Etsitään mahdollinen peliaikasarake (esim. Time on ice, TOI, minutes, min)
+    # Etsitään peliaika- ja pelipaikkasarake
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
+    col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
     # Muutetaan puhtaiksi numeerisiksi sarjoiksi
     g = get_col(df, col_goals)
@@ -103,10 +104,14 @@ else:
     df['Block_clean'] = blk
     
     if col_toi:
-        # Muunnetaan MM:SS -muotoiset ajat desimaaleiksi tätä saraketta varten
         df['TOI_clean'] = df[col_toi].apply(parse_toi)
     else:
         df['TOI_clean'] = 0.0
+
+    if col_pos:
+        df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip()
+    else:
+        df['Pos_clean'] = 'UNKNOWN'
 
     # Game Score -kaava
     df['Game_Score'] = (
@@ -130,8 +135,9 @@ else:
     opponent_col = next((c for c in df.columns if 'opponent' in c.lower()), None)
 
     # --- SIVUPALKKI: SUODATTIMET ---
-    st.sidebar.header("🔍 Suodattimet")
+    script_header = st.sidebar.header("🔍 Suodattimet")
     
+    # 1. Joukkueen valinta
     if team_col:
         kaikki_tiimit = sorted(df[team_col].dropna().unique())
         valitut_tiimit = st.sidebar.multiselect("Valitse oma joukkue:", kaikki_tiimit, default=kaikki_tiimit)
@@ -142,19 +148,26 @@ else:
     else:
         df_filtered = df.copy()
 
+    # 2. Vastustajan valinta
     if opponent_col:
         kaikki_vastustajat = sorted(df[opponent_col].dropna().unique())
         valitut_vastustajat = st.sidebar.multiselect("Valitse vastustaja(t):", kaikki_vastustajat, default=kaikki_vastustajat)
         if valitut_vastustajat:
             df_filtered = df_filtered[df_filtered[opponent_col].isin(valitut_vastustajat)]
 
-    # Peliaikasuodatin vertailupohjalle, jos peliaikasarake löytyy datasta
+    # 3. Pelipaikan valinta (F / D)
+    st.sidebar.subheader("🏒 Pelipaikka")
+    valitut_pelipaikat = st.sidebar.multiselect("Valitse pelipaikka:", ['F', 'D'], default=['F', 'D'])
+    if col_pos and valitut_pelipaikat:
+        df_filtered = df_filtered[df_filtered['Pos_clean'].isin(valitut_pelipaikat)]
+
+    # 4. Peliaikasuodatin vertailupohjalle
     st.sidebar.subheader("⚖️ Keskiarvojen vertailupohja")
     min_toi_filter = 0.0
     if col_toi:
         min_toi_filter = st.sidebar.slider("Min. keskimääräinen peliaika (min/ottelu):", 0.0, 30.0, 0.0, 0.5)
     else:
-        st.sidebar.info("Peliaikasaraketta (Time on ice) ei löytynyt automaattisesti datasta.")
+        st.sidebar.info("Peliaikasaraketta (Time on ice) ei löytynyt automaattisesti.")
 
     # Rajataan verrokkijoukko keskiarvoja varten
     if player_col and col_toi:
@@ -210,19 +223,28 @@ else:
             }
             if col_toi:
                 agg_dict['TOI_clean'] = 'mean'
+            if col_pos:
+                agg_dict['Pos_clean'] = 'first'
 
+            group_cols = [player_col]
             if team_col in df_filtered.columns:
-                leaderboard = df_filtered.groupby([player_col, team_col]).agg(agg_dict).reset_index()
-                if col_toi:
-                    leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Keskim. Peliaika (min)']
-                else:
-                    leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
-            else:
-                leaderboard = df_filtered.groupby([player_col]).agg(agg_dict).reset_index()
-                if col_toi:
-                    leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset', 'Keskim. Peliaika (min)']
-                else:
-                    leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
+                group_cols.append(team_col)
+            if col_pos:
+                group_cols.append('Pos_clean')
+
+            leaderboard = df_filtered.groupby(group_cols).agg(agg_dict).reset_index()
+            
+            # Luodaan fiksummat sarakkeiden nimet riippuen siitä mitä tietoja löytyy
+            cols = ['Pelaaja']
+            if team_col in df_filtered.columns:
+                cols.append('Joukkue')
+            if col_pos:
+                cols.append('Pelipaikka')
+            cols.extend(['Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset'])
+            if col_toi:
+                cols.append('Keskim. Peliaika (min)')
+
+            leaderboard.columns = cols
 
             # Suodatetaan peliajan mukaan jos sarake löytyy
             if col_toi and min_toi_filter > 0:
