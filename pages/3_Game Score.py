@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="SDHL Game Score -analyysi", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score -analyysityökalu (2026–2027)")
-st.write("Tämä sivu laskee pelaajien pelikohtaiset *Game Score* -pisteet mukautetulla kaavalla suoraan raakadatasta.")
+st.write("Tämä sivu laskee pelaajien pelikohtaiset *Game Score* -pisteet xG-pohjaisella kaavalla suoraan raakadatasta.")
 
 # Tiedoston lataus
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
@@ -34,7 +34,7 @@ else:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
         return 0
 
-    # Etsitään sarakkeet tarkkojen nimien perusteella kuvasta
+    # Etsitään sarakkeet tarkkojen nimien perusteella
     col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
     col_a1 = next((c for c in df.columns if c.lower() == 'first assist'), None)
     col_a2 = next((c for c in df.columns if c.lower() == 'second assist'), None)
@@ -44,8 +44,11 @@ else:
     col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
     col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
     col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
-    col_cf = next((c for c in df.columns if c.lower() == 'corsipt' or c.lower() == 'corsii+'), None) # tai corsii+ riippuen kirjoitusasusta
-    col_ca = next((c for c in df.columns if c.lower() == 'corsii-'), None)
+    
+    # xG on-ice -sarakkeet Corsin tilalla
+    col_xg_on = next((c for c in df.columns if c.lower() == 'xgs with a player on' or c.lower() == 'xg with a player on'), None)
+    col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
+    
     col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
     col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
 
@@ -59,17 +62,17 @@ else:
     pt_val = get_col(df, col_pt)
     fow = get_col(df, col_fow)
     fol = get_col(df, col_fol)
-    cf = get_col(df, col_cf)
-    ca = get_col(df, col_ca)
+    xg_for = get_col(df, col_xg_on)
+    xg_against = get_col(df, col_opp_xg_on)
     gf = get_col(df, col_gf)
     ga = get_col(df, col_ga)
 
-    # Tallennetaan siivotut arvot tarvittaessa dataframeen näyttöä varten
+    # Tallennetaan siivotut arvot taulukkoon näyttöä varten
     df['Goals_clean'] = g
     df['Assists_clean'] = a1 + a2
     df['Shots_clean'] = sog
 
-    # Uusi tarkka Game Score -kaavasi
+    # Game Score -kaava xG-arvoilla (Corsi korvattu)
     df['Game_Score'] = (
         (0.75 * g) + 
         (0.7 * a1) + 
@@ -80,8 +83,8 @@ else:
         (0.15 * pt_val) + 
         (0.01 * fow) - 
         (0.01 * fol) + 
-        (0.05 * cf) - 
-        (0.05 * ca) + 
+        (0.05 * xg_for) - 
+        (0.05 * xg_against) + 
         (0.15 * gf) - 
         (0.15 * ga)
     )
@@ -106,7 +109,7 @@ else:
             df = df[df[opponent_col].isin(valitut_vastustajat)]
 
     # Välilehdet sovelluksessa
-    tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Kausitilastot & Leaderboard", "📁 Raakadata"])
+    tab1, tab2, tab3 = tab1, tab2, tab3 = st.tabs(["📊 Pelaajaprofiili & Kehitys", "🏆 Kausitilastot & Leaderboard", "📁 Raakadata"])
 
     with tab1:
         st.subheader("Pelaajan kehityskäyrä kauden aikana")
