@@ -53,7 +53,7 @@ else:
     col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
     col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
     
-    col_xg_on = next((c for c in df.columns if c.lower() == 'xgs with a player on' or c.lower() == 'xg with a player on'), None)
+    col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
     col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
     
     col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
@@ -108,13 +108,30 @@ else:
         kaikki_tiimit = sorted(df[team_col].dropna().unique())
         valitut_tiimit = st.sidebar.multiselect("Valitse oma joukkue:", kaikki_tiimit, default=kaikki_tiimit)
         if valitut_tiimit:
-            df = df[df[team_col].isin(valitut_tiimit)]
+            df_filtered = df[df[team_col].isin(valitut_tiimit)]
+        else:
+            df_filtered = df.copy()
+    else:
+        df_filtered = df.copy()
 
     if opponent_col:
         kaikki_vastustajat = sorted(df[opponent_col].dropna().unique())
         valitut_vastustajat = st.sidebar.multiselect("Valitse vastustaja(t):", kaikki_vastustajat, default=kaikki_vastustajat)
         if valitut_vastustajat:
-            df = df[df[opponent_col].isin(valitut_vastustajat)]
+            df_filtered = df_filtered[df_filtered[opponent_col].isin(valitut_vastustajat)]
+
+    # Lisätään suodatin vertailupohjan rajaamiseksi (esim. vähimmäisottelumäärä per pelaaja keskiarvojen laskentaan)
+    st.sidebar.subheader("⚖️ Keskiarvojen vertailupohja")
+    min_pelit_vertailu = st.sidebar.slider("Vähintään pelatut ottelut (keskiarvojen vertailuun):", 1, 20, 1)
+
+    # Lasketaan pelaajakohtaiset ottelumäärät rajauksen tekemiseksi
+    if player_col:
+        pelaaja_peli_counts = df_filtered.groupby(player_col).size()
+        vakituiset_pelaajat = pelaaja_peli_counts[pelaaja_peli_counts >= min_pelit_vertailu].index
+        # Datapisteet vertailtaville keskiarvoille (rajataan vain vähän pelanneet pois jos halutaan)
+        df_vertailu = df_filtered[df_filtered[player_col].isin(vakituiset_pelaajat)]
+    else:
+        df_vertailu = df_filtered
 
     # Luodaan välilehdet kerralla
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -127,10 +144,10 @@ else:
     with tab1:
         st.subheader("Pelaajan kehityskäyrä kauden aikana")
         if player_col:
-            pelaajat = sorted(df[player_col].dropna().unique())
+            pelaajat = sorted(df_filtered[player_col].dropna().unique())
             if len(pelaajat) > 0:
                 valittu_pelaaja = st.selectbox("Valitse tarkasteltava pelaaja:", pelaajat, key='tab1_player')
-                pelaaja_df = df[df[player_col] == valittu_pelaaja].sort_values(by='Date')
+                pelaaja_df = df_filtered[df_filtered[player_col] == valittu_pelaaja].sort_values(by='Date')
 
                 if not pelaaja_df.empty:
                     col1, col2, col3, col4 = st.columns(4)
@@ -160,12 +177,15 @@ else:
                 'Assists_clean': 'sum',
                 'Shots_clean': 'sum'
             }
-            if team_col in df.columns:
-                leaderboard = df.groupby([player_col, team_col]).agg(agg_dict).reset_index()
+            if team_col in df_filtered.columns:
+                leaderboard = df_filtered.groupby([player_col, team_col]).agg(agg_dict).reset_index()
                 leaderboard.columns = ['Pelaaja', 'Joukkue', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
             else:
-                leaderboard = df.groupby([player_col]).agg(agg_dict).reset_index()
+                leaderboard = df_filtered.groupby([player_col]).agg(agg_dict).reset_index()
                 leaderboard.columns = ['Pelaaja', 'Pelit', 'GS Keskiarvo', 'GS Yhteensä', 'Maalit', 'Syötöt', 'Laukaukset']
+
+            # Suodatetaan leaderboardiin myös valittu vähimmäisottelumäärä
+            leaderboard = leaderboard[leaderboard['Pelit'] >= min_pelit_vertailu]
 
             leaderboard['GS Keskiarvo'] = leaderboard['GS Keskiarvo'].round(2)
             leaderboard['GS Yhteensä'] = leaderboard['GS Yhteensä'].round(2)
@@ -176,25 +196,26 @@ else:
         st.subheader("📊 Pelaajan ottelukohtainen Game Score vs Keskiarvot")
         
         if player_col:
-            pelaajat = sorted(df[player_col].dropna().unique())
+            pelaajat = sorted(df_filtered[player_col].dropna().unique())
             valittu_pelaaja_pylvas = st.selectbox("Valitse pelaaja tarkasteluun:", pelaajat, key='bar_player')
             
-            pelaaja_df = df[df[player_col] == valittu_pelaaja_pylvas].sort_values(by='Date')
+            pelaaja_df = df_filtered[df_filtered[player_col] == valittu_pelaaja_pylvas].sort_values(by='Date')
             
             if not pelaaja_df.empty:
                 pelaajan_oma_ka = pelaaja_df['Game_Score'].mean()
-                sdhl_ka = df['Game_Score'].mean()
+                
+                # Lasketaan keskiarvot suodatetusta (vähintään X peliä pelanneiden) verrokkijoukosta
+                sdhl_ka = df_vertailu['Game_Score'].mean()
                 
                 if team_col:
                     pelaajan_tiimi = pelaaja_df[team_col].iloc[0]
-                    tiimi_df = df[df[team_col] == pelaajan_tiimi]
-                    tiimi_ka = tiimi_df['Game_Score'].mean()
+                    tiimi_df = df_vertailu[df_vertailu[team_col] == pelaajan_tiimi]
+                    tiimi_ka = tiimi_df['Game_Score'].mean() if not tiimi_df.empty else 0
                     tiimi_nimi = pelaajan_tiimi
                 else:
                     tiimi_ka = None
                     tiimi_nimi = "Joukkue"
 
-                # Luodaan pylväsdiagrammi selkeämmällä värillä (esim. cyan / teal)
                 fig_bar = px.bar(
                     pelaaja_df, 
                     x='Date', 
@@ -203,7 +224,7 @@ else:
                     labels={'Date': 'Ottelupäivä', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
-                fig_bar.update_traces(marker_color='#00b4d8') # Mukava kirkas sinivihreä sävy
+                fig_bar.update_traces(marker_color='#00b4d8')
 
                 # 1. SDHL-keskiarvo poikkiviivana (Harmaa)
                 fig_bar.add_hline(
@@ -226,7 +247,7 @@ else:
                         annotation_font_color="#ffb703"
                     )
 
-                # 3. Pelaajan oma keskiarvo poikkiviivana (Vihreä / vaalea turkoosi erotukseksi)
+                # 3. Pelaajan oma keskiarvo poikkiviivana (Turkoosi)
                 fig_bar.add_hline(
                     y=pelaajan_oma_ka, 
                     line_dash="solid", 
@@ -250,11 +271,11 @@ else:
                 with col1:
                     st.metric("Pelaajan keskiarvo", f"{pelaajan_oma_ka:.2f}")
                 with col2:
-                    st.metric("SDHL keskiarvo", f"{sdhl_ka:.2f}")
+                    st.metric("SDHL keskiarvo (rajattu)", f"{sdhl_ka:.2f}")
                 with col3:
                     if team_col:
-                        st.metric(f"{tiimi_nimi} keskiarvo", f"{tiimi_ka:.2f}")
+                        st.metric(f"{tiimi_nimi} keskiarvo (rajattu)", f"{tiimi_ka:.2f}")
 
     with tab4:
         st.subheader("Raakadata ja lasketut Game Score -pisteet")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df_filtered, use_container_width=True)
