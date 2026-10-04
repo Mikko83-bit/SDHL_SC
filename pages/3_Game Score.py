@@ -34,9 +34,9 @@ df = load_data(EXCEL_FILE)
 if df is not None:
     # Helper functions
     def get_col(data, col_name):
-        if col_name in data.columns:
+        if col_name and col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
-        return 0
+        return pd.Series(0, index=data.index)
 
     def parse_toi(val):
         if pd.isna(val):
@@ -70,28 +70,18 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    g = get_col(df, col_goals)
-    a1 = get_col(df, col_a1)
-    a2 = get_col(df, col_a2)
-    sog = get_col(df, col_sog)
-    ixg = get_col(df, col_ixg) if col_ixg else get_col(df, col_sog) * 0.1
-    pt_val = get_col(df, col_pt)
-    gf = get_col(df, col_gf)
-    ga = get_col(df, col_ga)
-    cf = get_col(df, col_cf) if col_cf else get_col(df, col_sog)
-    ca = get_col(df, col_ca) if col_ca else 0
-
-    df['Goals_clean'] = g
-    df['Assists_clean'] = a1 + a2
-    df['Shots_clean'] = sog
+    df['Goals_clean'] = get_col(df, col_goals)
+    df['Assists_clean'] = get_col(df, col_a1) + get_col(df, col_a2)
+    df['Shots_clean'] = get_col(df, col_sog)
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'F'
-    df['iXG_clean'] = ixg
-    df['PT_clean'] = pt_val
-    df['GF_clean'] = gf
-    df['GA_clean'] = ga
-    df['CF_clean'] = cf
-    df['CA_clean'] = ca
+    df['iXG_clean'] = get_col(df, col_ixg) if col_ixg else get_col(df, col_sog) * 0.1
+    df['PT_clean'] = get_col(df, col_pt)
+    df['GF_clean'] = get_col(df, col_gf)
+    df['GA_clean'] = get_col(df, col_ga)
+    df['CF_clean'] = get_col(df, col_cf) if col_cf else get_col(df, col_sog)
+    df['CA_clean'] = get_col(df, col_ca)
+    df['Game_Count'] = 1  # Apusarake pelattujen otteluiden laskemiseen
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
     team_col = next((c for c in df.columns if c.lower() == 'team'), None)
@@ -125,11 +115,10 @@ if df is not None:
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
 
-        # Lasketaan pelaajakohtainen Per 60 korttiin
         if total_toi > 0:
             scale_factor = 60.0 / total_toi
             p_g = p_df['Goals_clean'].sum() * scale_factor
-            p_a1 = p_df.get('A1_clean', p_df['Assists_clean'] * 0.6).sum() * scale_factor # Arvio / tarkistus
+            p_a_tot = p_df['Assists_clean'].sum() * scale_factor
             p_ixg = p_df['iXG_clean'].sum() * scale_factor
             p_gf = p_df['GF_clean'].sum() * scale_factor
             p_cf = p_df['CF_clean'].sum() * scale_factor
@@ -139,7 +128,7 @@ if df is not None:
             pos = p_df['Pos_clean'].iloc[0]
             
             is_d_p = (pos == 'D')
-            off_card = (0.75 * p_g) + (0.7 * (p_df['Assists_clean'].sum()*0.6*scale_factor)) + (0.55 * (p_df['Assists_clean'].sum()*0.4*scale_factor)) + (0.5 * p_ixg) + \
+            off_card = (0.75 * p_g) + (0.7 * (p_a_tot * 0.6)) + (0.55 * (p_a_tot * 0.4)) + (0.5 * p_ixg) + \
                        ((0.425 if is_d_p else 0.625) * p_gf) + ((1.7 if is_d_p else 0.625) * p_cf)
             def_card = - (0.15 * p_pt) - ((0.575 if is_d_p else 0.4375) * p_ga) - ((2.3 if is_d_p else 1.75) * p_ca)
             gs_card = off_card + def_card
@@ -161,8 +150,9 @@ if df is not None:
 
         st.markdown("### 📈 Season Trend Charts")
         
-        # Peli-kohtainen kehitys ottelukohtaisilla arvoilla
-        p_df['Off_Match'] = (0.75 * p_df['Goals_clean']) + (0.7 * a1.loc[p_df.index]) + (0.55 * a2.loc[p_df.index]) + (0.5 * p_df['iXG_clean']) + \
+        a1_match = get_col(p_df, col_a1)
+        a2_match = get_col(p_df, col_a2)
+        p_df['Off_Match'] = (0.75 * p_df['Goals_clean']) + (0.7 * a1_match) + (0.55 * a2_match) + (0.5 * p_df['iXG_clean']) + \
                             p_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
         p_df['Def_Match'] = - (0.15 * p_df['PT_clean']) - p_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
         p_df['GS_Match'] = p_df['Off_Match'] + p_df['Def_Match']
@@ -201,7 +191,6 @@ if df is not None:
             if col_pos:
                 group_cols.append('Pos_clean')
 
-            # Aggregoidaan summat per pelaaja kauden aikana
             agg_dict = {
                 'TOI_clean': 'sum',
                 'Goals_clean': 'sum',
@@ -212,13 +201,12 @@ if df is not None:
                 'GA_clean': 'sum',
                 'CF_clean': 'sum',
                 'CA_clean': 'sum',
-                'Game_Score': 'count' # Pelatut ottelut
+                'Game_Count': 'sum'
             }
             
             agg_df = df_filtered.groupby(group_cols).agg(agg_dict).reset_index()
-            agg_df = agg_df.rename(columns={'Game_Score': 'Games'})
+            agg_df = agg_df.rename(columns={'Game_Count': 'Games'})
 
-            # Muutetaan Per 60 -muotoon koko kauden kokonaissummien ja peliajan perusteella
             def calculate_per_60(row):
                 toi = row['TOI_clean']
                 if toi <= 0:
@@ -228,7 +216,6 @@ if df is not None:
                 is_d = row['Pos_clean'] == 'D'
                 
                 g_val = row['Goals_clean'] * factor
-                # Oletetaan a1/a2 suhde samaksi kuin annetuissa syötöissä
                 a_tot = row['Assists_clean'] * factor
                 a1_val = a_tot * 0.6
                 a2_val = a_tot * 0.4
@@ -240,11 +227,9 @@ if df is not None:
                 ga_val = row['GA_clean'] * factor
                 ca_val = row['CA_clean'] * factor
                 
-                # Offensiv Per 60
                 off = (0.75 * g_val) + (0.7 * a1_val) + (0.55 * a2_val) + (0.5 * ixg_val) + \
                       ((0.425 if is_d else 0.625) * gf_val) + ((1.7 if is_d else 0.625) * cf_val)
                 
-                # Defensiv Per 60
                 def_s = - (0.15 * pt_val) - ((0.575 if is_d else 0.4375) * ga_val) - ((2.3 if is_d else 1.75) * ca_val)
                 
                 gs = off + def_s
@@ -252,7 +237,6 @@ if df is not None:
 
             agg_df[['GS Per 60', 'Offensive Per 60', 'Defensive Per 60']] = agg_df.apply(calculate_per_60, axis=1)
 
-            # Viimeistellään taulukko
             leaderboard = agg_df.copy()
             leaderboard['Avg. Time on Ice (min)'] = leaderboard['TOI_clean'] / leaderboard['Games']
             leaderboard['Goals'] = leaderboard['Goals_clean']
@@ -305,7 +289,9 @@ if df is not None:
                 player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date')
 
                 if not player_df.empty:
-                    player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1.loc[player_df.index]) + (0.55 * a2.loc[player_df.index]) + (0.5 * player_df['iXG_clean']) + \
+                    a1_m = get_col(player_df, col_a1)
+                    a2_m = get_col(player_df, col_a2)
+                    player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1_m) + (0.55 * a2_m) + (0.5 * player_df['iXG_clean']) + \
                                             player_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
                     player_df['Def_Match'] = - (0.15 * player_df['PT_clean']) - player_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
                     player_df['GS_Match'] = player_df['Off_Match'] + player_df['Def_Match']
@@ -326,7 +312,9 @@ if df is not None:
             player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date')
             
             if not player_df.empty:
-                player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1.loc[player_df.index]) + (0.55 * a2.loc[player_df.index]) + (0.5 * player_df['iXG_clean']) + \
+                a1_m = get_col(player_df, col_a1)
+                a2_m = get_col(player_df, col_a2)
+                player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1_m) + (0.55 * a2_m) + (0.5 * player_df['iXG_clean']) + \
                                         player_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
                 player_df['Def_Match'] = - (0.15 * player_df['PT_clean']) - player_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
                 player_df['GS_Match'] = player_df['Off_Match'] + player_df['Def_Match']
