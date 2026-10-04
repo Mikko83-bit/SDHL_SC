@@ -5,7 +5,7 @@ import plotly.express as px
 # Page configuration
 st.set_page_config(page_title="SDHL Game Score Analysis", page_icon="🏒", layout="wide")
 
-st.title("🏒 SDHL Game Score Analysis Tool (2026–2027)")
+st.title("🏒 SDHL Game Score Analysis Tool (2026–2027) - 5v5 Net Rating Model")
 
 # File loading
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
@@ -54,20 +54,22 @@ if df is not None:
             except:
                 return 0.0
 
-    # Column mappings
+    # Column mappings (tukee joustavasti erilaisia sarakkeiden nimiä Excelissä)
     col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
-    col_a1 = next((c for c in df.columns if c.lower() == 'first assist'), None)
-    col_a2 = next((c for c in df.columns if c.lower() == 'second assist'), None)
-    col_sog = next((c for c in df.columns if c.lower() == 'shots on goal'), None)
-    col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
+    col_a1 = next((c for c in df.columns if c.lower() in ['first assist', 'assist 1', 'a1']), None)
+    col_a2 = next((c for c in df.columns if c.lower() in ['second assist', 'assist 2', 'a2']), None)
+    col_sog = next((c for c in df.columns if c.lower() in ['shots on goal', 'sog', 'shots']), None)
+    col_blk = next((c for c in df.columns if c.lower() in ['blocked shots', 'blocks']), None)
     col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
-    col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
+    col_pt = next((c for c in df.columns if c.lower() in ['penalty time', 'pim']), None)
     col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
     col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
-    col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
-    col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
-    col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
-    col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
+    
+    col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on', 'ixg', 'xg for']), None)
+    col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower() or 'xg against' in c.lower()), None)
+    
+    col_gf = next((c for c in df.columns if c.lower() in ['plus', 'goals for', 'gf']), None)
+    col_ga = next((c for c in df.columns if c.lower() in ['minus', 'goals against', 'ga']), None)
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
@@ -90,14 +92,25 @@ if df is not None:
     df['Shots_clean'] = sog
     df['Block_clean'] = blk
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
-    df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
+    df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'F'
 
-    df['Game_Score'] = (
-        (0.75 * g) + (0.7 * a1) + (0.55 * a2) + (0.075 * sog) + 
-        (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
-        (0.01 * fow) - (0.01 * fol) + (0.05 * xg_for) - 
-        (0.05 * xg_against) + (0.15 * gf) - (0.15 * ga)
-    )
+    # --- 5v5 NET RATING / GAME SCORE -MALLI (Offensiv / Defensiv erittely) ---
+    # Erotellaan painotukset hyökkääjille (F) ja puolustajille (D) jakamasi mallin hengessä
+    is_def = df['Pos_clean'] == 'D'
+
+    # Offensiiviset komponentit (Mål, Assists, Shots/xG, On-ice Mål för)
+    off_indiv = (0.75 * g) + (0.7 * a1) + (0.55 * a2) + (0.075 * sog) + (0.05 * xg_for)
+    # Puolustajille annetaan hieman isompi painoarvo laukauksissa/on-ice hyökkäyksessä
+    off_onice = df.apply(lambda row: (0.425 * gf[row.name] + 0.05 * fow[row.name]) if row['Pos_clean'] == 'D' else (0.625 * gf[row.name] + 0.01 * fow[row.name]), axis=1)
+    df['Offensive_Score'] = off_indiv + off_onice
+
+    # Defensiiviset komponentit (Utvisningar miinuksena, On-ice Mål bakåt / xG against)
+    def_penalties = (0.15 * pd_val) - (0.15 * pt_val) - (0.01 * fol)
+    def_onice = df.apply(lambda row: (-0.575 * ga[row.name] - 0.05 * xg_against[row.name]) if row['Pos_clean'] == 'D' else (-0.4375 * ga[row.name] - 0.05 * xg_against[row.name]), axis=1)
+    df['Defensive_Score'] = def_penalties + def_onice
+
+    # Kokonais Game Score
+    df['Game_Score'] = df['Offensive_Score'] + df['Defensive_Score']
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
     team_col = next((c for c in df.columns if c.lower() == 'team'), None)
@@ -139,20 +152,22 @@ if df is not None:
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
 
-        st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | SDHL 26/27 | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
+        st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | 5v5 Model | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
         st.markdown("---")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("GAME SCORE (Avg)", f"{p_df['Game_Score'].mean():.2f}")
         with col2:
-            st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
+            st.metric("OFFENSIVE (Avg)", f"{p_df['Offensive_Score'].mean():.2f}")
         with col3:
-            st.metric("TOTAL ASSISTS", int(p_df['Assists_clean'].sum()))
+            st.metric("DEFENSIVE (Avg)", f"{p_df['Defensive_Score'].mean():.2f}")
+        with col4:
+            st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
 
         st.markdown("### 📈 Season Trend Charts")
         
-        fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
+        fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History (5v5)")
         fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
         st.plotly_chart(fig_gs, use_container_width=True)
 
@@ -161,7 +176,7 @@ if df is not None:
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             st.plotly_chart(fig_toi, use_container_width=True)
 
-    # --- NAVIGATION (Radiopainikkeet estävät välilehtien päällekkäisen suorituksen) ---
+    # --- NAVIGATION ---
     selected_tab = st.radio(
         "Navigation",
         [
@@ -176,7 +191,7 @@ if df is not None:
     st.markdown("---")
 
     if selected_tab == "🏆 Season Leaderboard":
-        st.subheader("🏆 Player Leaderboard")
+        st.subheader("🏆 Player Leaderboard (5v5 Model)")
         st.caption("Klikkaa mitä tahansa pelaajariviä taulukosta avataksesi pelaajakortin.")
         
         if player_col:
@@ -189,10 +204,10 @@ if df is not None:
             agg_kwargs = {
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
-                'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
+                'Offensive Avg': pd.NamedAgg(column='Offensive_Score', aggfunc='mean'),
+                'Defensive Avg': pd.NamedAgg(column='Defensive_Score', aggfunc='mean'),
                 'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
                 'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
-                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -211,10 +226,9 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            if 'GS Average' in leaderboard.columns:
-                leaderboard['GS Average'] = leaderboard['GS Average'].round(2)
-            if 'GS Total' in leaderboard.columns:
-                leaderboard['GS Total'] = leaderboard['GS Total'].round(2)
+            for col_to_round in ['GS Average', 'Offensive Avg', 'Defensive Avg']:
+                if col_to_round in leaderboard.columns:
+                    leaderboard[col_to_round] = leaderboard[col_to_round].round(2)
 
             leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
@@ -247,13 +261,13 @@ if df is not None:
                 if not player_df.empty:
                     fig = px.line(
                         player_df, x='Date', y='Game_Score', markers=True,
-                        title=f"Player {selected_player} Game Score Game History"
+                        title=f"Player {selected_player} Game Score History (5v5)"
                     )
                     fig.update_layout(xaxis_type='category')
                     st.plotly_chart(fig, use_container_width=True)
 
     elif selected_tab == "📈 Game-by-Game Scores":
-        st.subheader("📊 Player Game-by-Game Game Score vs Averages")
+        st.subheader("📊 Player Game-by-Game Game Score vs Averages (5v5)")
         if player_col:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
@@ -275,13 +289,12 @@ if df is not None:
 
                 fig_bar = px.bar(
                     player_df, x='Date', y='Game_Score',
-                    title=f"Player {selected_player_bar} Game-by-Game Game Score",
+                    title=f"Player {selected_player_bar} Game-by-Game Game Score (5v5)",
                     labels={'Date': 'Game Date', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
                 fig_bar.update_traces(marker_color='#00b4d8')
 
-                # SDHL Average katkoviiva
                 fig_bar.add_hline(
                     y=sdhl_ka, 
                     line_dash="dash", 
@@ -291,7 +304,6 @@ if df is not None:
                     annotation_font_color="#adb5bd"
                 )
 
-                # Joukkueen keskiarvon katkoviiva
                 if team_col and not pd.isna(tiimi_ka):
                     fig_bar.add_hline(
                         y=tiimi_ka, 
@@ -302,7 +314,6 @@ if df is not None:
                         annotation_font_color="#ffb703"
                     )
 
-                # Pelaajan oman keskiarvon viiva
                 fig_bar.add_hline(
                     y=player_oma_ka, 
                     line_dash="solid", 
@@ -314,7 +325,7 @@ if df is not None:
 
                 fig_bar.update_layout(
                     xaxis_type='category',
-                    yaxis_title="Game Score",
+                    yaxis_title="Game Score (5v5)",
                     xaxis_title="Game Date",
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)'
@@ -322,7 +333,6 @@ if df is not None:
 
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
-                # Mittarit alapuolella
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Player Average", f"{player_oma_ka:.2f}")
@@ -333,5 +343,5 @@ if df is not None:
                         st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
 
     elif selected_tab == "📁 Raw Data":
-        st.subheader("Raw Data and Calculated Game Score Values")
+        st.subheader("Raw Data and Calculated 5v5 Game Score Values")
         st.dataframe(df_filtered, use_container_width=True)
