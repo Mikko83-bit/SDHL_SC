@@ -161,15 +161,21 @@ if df is not None:
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             st.plotly_chart(fig_toi, use_container_width=True)
 
-    # --- TABS ---
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🏆 Season Leaderboard", 
-        "📊 Player Progression", 
-        "📈 Game-by-Game Scores", 
-        "📁 Raw Data"
-    ])
+    # --- NAVIGATION (Radiopainikkeet estävät välilehtien päällekkäisen suorituksen) ---
+    selected_tab = st.radio(
+        "Navigation",
+        [
+            "🏆 Season Leaderboard", 
+            "📊 Player Progression", 
+            "📈 Game-by-Game Scores", 
+            "📁 Raw Data"
+        ],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    st.markdown("---")
 
-    with tab1:
+    if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard")
         st.caption("Klikkaa mitä tahansa pelaajariviä taulukosta avataksesi pelaajakortin.")
         
@@ -221,13 +227,12 @@ if df is not None:
                 key="leaderboard_interactive_table"
             )
 
-            # Avaa kortti TÄSMÄLLEEN VAIN tällä välilehdellä, kun riviä klikataan
             if event and event.selection and event.selection.rows:
                 clicked_index = event.selection.rows[0]
                 clicked_player = leaderboard.iloc[clicked_index]['Player']
                 show_player_card(clicked_player)
 
-    with tab2:
+    elif selected_tab == "📊 Player Progression":
         st.subheader("Player Progression Curve During the Season")
         if player_col:
             players = sorted(df_filtered[player_col].dropna().unique())
@@ -247,7 +252,7 @@ if df is not None:
                     fig.update_layout(xaxis_type='category')
                     st.plotly_chart(fig, use_container_width=True)
 
-    with tab3:
+    elif selected_tab == "📈 Game-by-Game Scores":
         st.subheader("📊 Player Game-by-Game Game Score vs Averages")
         if player_col:
             players = sorted(df_filtered[player_col].dropna().unique())
@@ -327,6 +332,6 @@ if df is not None:
                     if team_col:
                         st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
 
-    with tab4:
+    elif selected_tab == "📁 Raw Data":
         st.subheader("Raw Data and Calculated Game Score Values")
         st.dataframe(df_filtered, use_container_width=True)
