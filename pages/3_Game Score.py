@@ -49,12 +49,11 @@ if df is not None:
                 return 0.0
         else:
             try:
-                # Jos peliaika on esim. minuutteina desimaalina tai kokonaislukuna
                 return float(val_str)
             except:
                 return 0.0
 
-    # Poimitaan tarkat sarakkeet suoraan Excelin otsikoista
+    # Sarakkeiden poiminta
     col_goals = 'Goals' if 'Goals' in df.columns else None
     col_a1 = 'First assist' if 'First assist' in df.columns else None
     col_a2 = 'Second assist' if 'Second assist' in df.columns else None
@@ -84,7 +83,35 @@ if df is not None:
     df['GA_clean'] = get_col(df, col_ga)
     df['CF_clean'] = get_col(df, col_cf)
     df['CA_clean'] = get_col(df, col_ca)
-    df['Game_Count'] = 1  # Ottelulaskuri
+
+    # LASKETAAN ENSIN JOKAISELLE RIVILLE (PELILLE) PER 60 -ARVOT
+    def calculate_row_per_60(row):
+        toi = row['TOI_clean']
+        if toi <= 0:
+            return pd.Series([0.0, 0.0, 0.0])
+        
+        factor = 60.0 / toi
+        is_d = row['Pos_clean'] == 'D'
+        
+        g_val = row['Goals_clean'] * factor
+        a1_val = row['A1_clean'] * factor
+        a2_val = row['A2_clean'] * factor
+        ixg_val = row['iXG_clean'] * factor
+        gf_val = row['GF_clean'] * factor
+        ga_val = row['GA_clean'] * factor
+        pt_val = row['PT_clean'] * factor
+        
+        corsi_diff_per60 = (row['CF_clean'] - row['CA_clean']) * factor / 10.0
+        
+        off = (0.75 * g_val) + (0.7 * a1_val) + (0.55 * a2_val) + (0.5 * ixg_val) + \
+              (0.4 * gf_val) + (0.2 * max(0, corsi_diff_per60))
+        
+        def_s = - (0.15 * pt_val) - (0.4 * ga_val) - (0.2 * abs(min(0, corsi_diff_per60)))
+        
+        gs = off + def_s
+        return pd.Series([gs, off, def_s])
+
+    df[['Row_GS_Per60', 'Row_Off_Per60', 'Row_Def_Per60']] = df.apply(calculate_row_per_60, axis=1)
 
     # --- SIDEBAR: FILTERS ---
     st.sidebar.header("🔍 Filters")
@@ -115,26 +142,10 @@ if df is not None:
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
 
-        if total_toi > 0:
-            scale_factor = 60.0 / total_toi
-            p_g = p_df['Goals_clean'].sum() * scale_factor
-            p_a1 = p_df['A1_clean'].sum() * scale_factor
-            p_a2 = p_df['A2_clean'].sum() * scale_factor
-            p_ixg = p_df['iXG_clean'].sum() * scale_factor
-            p_gf = p_df['GF_clean'].sum() * scale_factor
-            p_cf = p_df['CF_clean'].sum() * scale_factor
-            p_pt = p_df['PT_clean'].sum() * scale_factor
-            p_ga = p_df['GA_clean'].sum() * scale_factor
-            p_ca = p_df['CA_clean'].sum() * scale_factor
-            pos = p_df['Pos_clean'].iloc[0]
-            
-            is_d_p = (pos == 'D')
-            off_card = (0.75 * p_g) + (0.7 * p_a1) + (0.55 * p_a2) + (0.5 * p_ixg) + \
-                       ((0.425 if is_d_p else 0.625) * p_gf) + ((1.7 if is_d_p else 0.625) * p_cf)
-            def_card = - (0.15 * p_pt) - ((0.575 if is_d_p else 0.4375) * p_ga) - ((2.3 if is_d_p else 1.75) * p_ca)
-            gs_card = off_card + def_card
-        else:
-            gs_card, off_card, def_card = 0, 0, 0
+        # Keskiarvot pelaajakorttiin
+        gs_card = p_df['Row_GS_Per60'].mean()
+        off_card = p_df['Row_Off_Per60'].mean()
+        def_card = p_df['Row_Def_Per60'].mean()
 
         st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | 5v5 Per 60 Model | {gp} GP | {int(total_toi)} total min</span>", unsafe_allow_html=True)
         st.markdown("---")
@@ -160,7 +171,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard (5v5 Per 60 Model)")
-        st.caption("Tilastot on suhteutettu 60 minuutin peliaikaan (Per 60). Klikkaa mitä tahansa pelaajariviä avataksesi pelaajakortin.")
+        st.caption("Tilastot ovat ottelukohtaisten Per 60 -arvojen keskiarvoja. Klikkaa mitä tahansa pelaajariviä avataksesi pelaajakortin.")
         
         if player_col:
             group_cols = [player_col]
@@ -170,56 +181,31 @@ if df is not None:
                 group_cols.append('Pos_clean')
 
             agg_dict = {
-                'TOI_clean': 'sum',
+                'TOI_clean': ['sum', 'count'],
                 'Goals_clean': 'sum',
-                'A1_clean': 'sum',
-                'A2_clean': 'sum',
                 'Assists_clean': 'sum',
-                'iXG_clean': 'sum',
-                'PT_clean': 'sum',
-                'GF_clean': 'sum',
-                'GA_clean': 'sum',
-                'CF_clean': 'sum',
-                'CA_clean': 'sum',
-                'Game_Count': 'sum'
+                'Row_GS_Per60': 'mean',
+                'Row_Off_Per60': 'mean',
+                'Row_Def_Per60': 'mean'
             }
             
             agg_df = df_filtered.groupby(group_cols).agg(agg_dict).reset_index()
-            agg_df = agg_df.rename(columns={'Game_Count': 'Games'})
-
-            def calculate_per_60(row):
-                toi = row['TOI_clean']
-                if toi <= 0:
-                    return pd.Series([0.0, 0.0, 0.0])
-                
-                factor = 60.0 / toi
-                is_d = row['Pos_clean'] == 'D'
-                
-                g_val = row['Goals_clean'] * factor
-                a1_val = row['A1_clean'] * factor
-                a2_val = row['A2_clean'] * factor
-                ixg_val = row['iXG_clean'] * factor
-                gf_val = row['GF_clean'] * factor
-                cf_val = row['CF_clean'] * factor
-                
-                pt_val = row['PT_clean'] * factor
-                ga_val = row['GA_clean'] * factor
-                ca_val = row['CA_clean'] * factor
-                
-                off = (0.75 * g_val) + (0.7 * a1_val) + (0.55 * a2_val) + (0.5 * ixg_val) + \
-                      ((0.425 if is_d else 0.625) * gf_val) + ((1.7 if is_d else 0.625) * cf_val)
-                
-                def_s = - (0.15 * pt_val) - ((0.575 if is_d else 0.4375) * ga_val) - ((2.3 if is_d else 1.75) * ca_val)
-                
-                gs = off + def_s
-                return pd.Series([gs, off, def_s])
-
-            agg_df[['GS Per 60', 'Offensive Per 60', 'Defensive Per 60']] = agg_df.apply(calculate_per_60, axis=1)
+            
+            # Siistitään multi-index sarakkeet
+            agg_df.columns = [col[0] if col[1] == '' else f"{col[0]}_{col[1]}" for col in agg_df.columns]
+            
+            agg_df = agg_df.rename(columns={
+                'TOI_clean_sum': 'Total_TOI',
+                'TOI_clean_count': 'Games',
+                'Goals_clean_sum': 'Goals',
+                'Assists_clean_sum': 'Assists',
+                'Row_GS_Per60_mean': 'GS Per 60',
+                'Row_Off_Per60_mean': 'Offensive Per 60',
+                'Row_Def_Per60_mean': 'Defensive Per 60'
+            })
 
             leaderboard = agg_df.copy()
-            leaderboard['Avg. Time on Ice (min)'] = leaderboard['TOI_clean'] / leaderboard['Games']
-            leaderboard['Goals'] = leaderboard['Goals_clean']
-            leaderboard['Assists'] = leaderboard['Assists_clean']
+            leaderboard['Avg. Time on Ice (min)'] = leaderboard['Total_TOI'] / leaderboard['Games']
 
             rename_map = {player_col: 'Player'}
             if team_col in df_filtered.columns:
