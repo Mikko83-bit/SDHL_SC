@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
 # Page configuration
 st.set_page_config(page_title="SDHL Game Score Analysis", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score Analysis Tool (2026–2027)")
-st.write("This page calculates player game-by-game *Game Score* values using an xG-based formula directly from raw data.")
+st.write("Klikkaa mitä tahansa pelaajaa suoraan taulukosta avataksesi pelaajakortti-modaalin!")
 
 # File loading
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
@@ -33,9 +32,7 @@ def load_data(file_path):
 
 df = load_data(EXCEL_FILE)
 
-if df is None:
-    st.error(f"An error occurred while reading the file '{EXCEL_FILE}'. Please ensure the file is in the correct folder.")
-else:
+if df is not None:
     # Helper functions
     def get_col(data, col_name):
         if col_name in data.columns:
@@ -117,12 +114,6 @@ else:
     else:
         df_filtered = df.copy()
 
-    if opponent_col:
-        all_opponents = sorted(df[opponent_col].dropna().unique())
-        selected_opponents = st.sidebar.multiselect("Select opponent(s):", all_opponents, default=all_opponents)
-        if selected_opponents:
-            df_filtered = df_filtered[df_filtered[opponent_col].isin(selected_opponents)]
-
     st.sidebar.subheader("🏒 Position")
     selected_positions = st.sidebar.multiselect("Select position:", ['F', 'D'], default=['F', 'D'])
     if col_pos and selected_positions:
@@ -130,15 +121,7 @@ else:
 
     min_toi_filter = st.sidebar.slider("Min. average time on ice (min/game):", 0.0, 30.0, 0.0, 0.5) if col_toi else 0.0
 
-    if player_col and col_toi:
-        player_toi_means = df_filtered.groupby(player_col)['TOI_clean'].mean()
-        regular_players = player_toi_means[player_toi_means >= min_toi_filter].index
-        df_vertailu = df_filtered[df_filtered[player_col].isin(regular_players)]
-    else:
-        df_vertailu = df_filtered
-
-
-    # --- PLAYER CARD DIALOG (Pelaajakortti ponnahdusikkuna) ---
+    # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
         p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date')
@@ -147,7 +130,6 @@ else:
             return
 
         team_val = p_df[team_col].iloc[0] if team_col else "SDHL"
-        pos_val = p_df['Pos_clean'].iloc[0] if col_pos else "F"
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
 
@@ -166,7 +148,6 @@ else:
 
         st.markdown("### 📈 Season Trend Charts")
         
-        # Kaaviot suoraan projektin omasta datasta
         fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
         fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
         st.plotly_chart(fig_gs, use_container_width=True)
@@ -176,49 +157,16 @@ else:
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             st.plotly_chart(fig_toi, use_container_width=True)
 
-
     # --- TABS ---
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Player Profile & Progression", 
-        "🏆 Season Stats & Leaderboard", 
+        "🏆 Season Leaderboard", 
+        "📊 Player Progression", 
         "📈 Game-by-Game Scores", 
         "📁 Raw Data"
     ])
 
     with tab1:
-        st.subheader("Player Progression Curve During the Season")
-        if player_col:
-            players = sorted(df_filtered[player_col].dropna().unique())
-            if len(players) > 0:
-                selected_player = st.selectbox("Select player to view:", players, key='tab1_player')
-                
-                # Lisätty tähänkin mahdollisuus avata suoraan player card!
-                if st.button("Open Player Card 🃏", key='btn_card_tab1'):
-                    show_player_card(selected_player)
-
-                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date')
-
-                if not player_df.empty:
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Games Played", len(player_df))
-                    with col2:
-                        st.metric("Average Game Score", round(player_df['Game_Score'].mean(), 2))
-                    with col3:
-                        st.metric("Total Goals", int(player_df['Goals_clean'].sum()))
-                    with col4:
-                        st.metric("Total Assists", int(player_df['Assists_clean'].sum()))
-
-                    fig = px.line(
-                        player_df, x='Date', y='Game_Score', markers=True,
-                        labels={'Date': 'Game Date', 'Game_Score': 'Game Score'},
-                        title=f"Player {selected_player} Game Score Game History"
-                    )
-                    fig.update_layout(xaxis_type='category')
-                    st.plotly_chart(fig, use_container_width=True)
-
-    with tab2:
-        st.subheader("🏆 Player Leaderboard (Season Stats)")
+        st.subheader("🏆 Player Leaderboard (Klikkaa riviä avataksesi pelaajakortin)")
         if player_col:
             group_cols = [player_col]
             if team_col in df_filtered.columns:
@@ -256,15 +204,44 @@ else:
             if 'GS Total' in leaderboard.columns:
                 leaderboard['GS Total'] = leaderboard['GS Total'].round(2)
 
-            st.dataframe(leaderboard.sort_values(by="GS Average", ascending=False), use_container_width=True, hide_index=True)
+            leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
-            # Lisätään leaderboardin alle kätevä pikavalinta, jolla voi avata minkä tahansa pelaajan kortin
-            st.markdown("---")
-            st.subheader("🃏 Quick Player Card View")
-            lb_players = sorted(leaderboard['Player'].unique())
-            selected_lb_player = st.selectbox("Select player to open detailed card:", lb_players, key='leaderboard_card_select')
-            if st.button("Open Player Card Modal", key='btn_open_lb_card'):
-                show_player_card(selected_lb_player)
+            # MUUTOS TÄSSÄ: Otetaan käyttöön st.dataframe rivivalinta (on_select)
+            event = st.dataframe(
+                leaderboard, 
+                use_container_width=True, 
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="leaderboard_table"
+            )
+
+            # Jos käyttäjä klikkasi riviä, haetaan pelaajan nimi ja avataan dialogi automaattisesti!
+            selected_rows = event.selection.rows
+            if selected_rows:
+                clicked_index = selected_rows[0]
+                clicked_player = leaderboard.iloc[clicked_index]['Player']
+                show_player_card(clicked_player)
+
+    with tab2:
+        st.subheader("Player Progression Curve During the Season")
+        if player_col:
+            players = sorted(df_filtered[player_col].dropna().unique())
+            if len(players) > 0:
+                selected_player = st.selectbox("Select player to view:", players, key='tab2_player')
+                
+                if st.button("Open Player Card 🃏", key='btn_card_tab2'):
+                    show_player_card(selected_player)
+
+                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date')
+
+                if not player_df.empty:
+                    fig = px.line(
+                        player_df, x='Date', y='Game_Score', markers=True,
+                        title=f"Player {selected_player} Game Score Game History"
+                    )
+                    fig.update_layout(xaxis_type='category')
+                    st.plotly_chart(fig, use_container_width=True)
 
     with tab3:
         st.subheader("📊 Player Game-by-Game Game Score vs Averages")
@@ -276,31 +253,17 @@ else:
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
-                sdhl_ka = df_vertailu['Game_Score'].mean()
+                sdhl_ka = df_filtered['Game_Score'].mean()
                 
-                if team_col:
-                    pelaajan_tiimi = player_df[team_col].iloc[0]
-                    tiimi_df = df_vertailu[df_vertailu[team_col] == pelaajan_tiimi]
-                    tiimi_ka = tiimi_df['Game_Score'].mean() if not tiimi_df.empty else 0
-                    tiimi_nimi = pelaajan_tiimi
-                else:
-                    tiimi_ka = None
-                    tiimi_nimi = "Team"
-
                 fig_bar = px.bar(
                     player_df, x='Date', y='Game_Score',
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
-                    labels={'Date': 'Game Date', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
                 fig_bar.update_traces(marker_color='#00b4d8')
                 fig_bar.add_hline(y=sdhl_ka, line_dash="dash", line_color="#adb5bd", annotation_text=f"SDHL Average ({sdhl_ka:.2f})")
-                
-                if team_col and not pd.isna(tiimi_ka):
-                    fig_bar.add_hline(y=tiimi_ka, line_dash="dot", line_color="#ffb703", annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})")
-
                 fig_bar.add_hline(y=player_oma_ka, line_dash="solid", line_color="#2ec4b6", annotation_text=f"Player Average ({player_oma_ka:.2f})")
-                fig_bar.update_layout(xaxis_type='category', yaxis_title="Game Score", xaxis_title="Game Date")
+                fig_bar.update_layout(xaxis_type='category')
 
                 st.plotly_chart(fig_bar, use_container_width=True)
 
