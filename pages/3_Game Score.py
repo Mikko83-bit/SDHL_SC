@@ -120,6 +120,13 @@ if df is not None:
 
     min_toi_filter = st.sidebar.slider("Min. average time on ice (min/game):", 0.0, 30.0, 0.0, 0.5) if col_toi else 0.0
 
+    if player_col and col_toi:
+        player_toi_means = df_filtered.groupby(player_col)['TOI_clean'].mean()
+        regular_players = player_toi_means[player_toi_means >= min_toi_filter].index
+        df_vertailu = df_filtered[df_filtered[player_col].isin(regular_players)]
+    else:
+        df_vertailu = df_filtered
+
     # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
@@ -205,7 +212,6 @@ if df is not None:
 
             leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
-            # Taulukko omalla key-arvolla, jotta se reagoi vain tällä välilehdellä
             event = st.dataframe(
                 leaderboard, 
                 use_container_width=True, 
@@ -215,7 +221,7 @@ if df is not None:
                 key="leaderboard_interactive_table"
             )
 
-            # Avataan kortti VAIN jos valinta tehdään tällä taulukolla
+            # Avaa kortti TÄSMÄLLEEN VAIN tällä välilehdellä, kun riviä klikataan
             if event and event.selection and event.selection.rows:
                 clicked_index = event.selection.rows[0]
                 clicked_player = leaderboard.iloc[clicked_index]['Player']
@@ -251,19 +257,75 @@ if df is not None:
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
-                sdhl_ka = df_filtered['Game_Score'].mean()
+                sdhl_ka = df_vertailu['Game_Score'].mean()
                 
+                if team_col:
+                    pelaajan_tiimi = player_df[team_col].iloc[0]
+                    tiimi_df = df_vertailu[df_vertailu[team_col] == pelaajan_tiimi]
+                    tiimi_ka = tiimi_df['Game_Score'].mean() if not tiimi_df.empty else 0
+                    tiimi_nimi = pelaajan_tiimi
+                else:
+                    tiimi_ka = None
+                    tiimi_nimi = "Team"
+
                 fig_bar = px.bar(
                     player_df, x='Date', y='Game_Score',
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
+                    labels={'Date': 'Game Date', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
                 fig_bar.update_traces(marker_color='#00b4d8')
-                fig_bar.add_hline(y=sdhl_ka, line_dash="dash", line_color="#adb5bd", annotation_text=f"SDHL Average ({sdhl_ka:.2f})")
-                fig_bar.add_hline(y=player_oma_ka, line_dash="solid", line_color="#2ec4b6", annotation_text=f"Player Average ({player_oma_ka:.2f})")
-                fig_bar.update_layout(xaxis_type='category')
+
+                # SDHL Average katkoviiva
+                fig_bar.add_hline(
+                    y=sdhl_ka, 
+                    line_dash="dash", 
+                    line_color="#adb5bd", 
+                    annotation_text=f"SDHL Average ({sdhl_ka:.2f})", 
+                    annotation_position="bottom right",
+                    annotation_font_color="#adb5bd"
+                )
+
+                # Joukkueen keskiarvon katkoviiva
+                if team_col and not pd.isna(tiimi_ka):
+                    fig_bar.add_hline(
+                        y=tiimi_ka, 
+                        line_dash="dot", 
+                        line_color="#ffb703", 
+                        annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})", 
+                        annotation_position="top right",
+                        annotation_font_color="#ffb703"
+                    )
+
+                # Pelaajan oman keskiarvon viiva
+                fig_bar.add_hline(
+                    y=player_oma_ka, 
+                    line_dash="solid", 
+                    line_color="#2ec4b6", 
+                    annotation_text=f"Player Average ({player_oma_ka:.2f})", 
+                    annotation_position="bottom left",
+                    annotation_font_color="#2ec4b6"
+                )
+
+                fig_bar.update_layout(
+                    xaxis_type='category',
+                    yaxis_title="Game Score",
+                    xaxis_title="Game Date",
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
 
                 st.plotly_chart(fig_bar, use_container_width=True)
+                
+                # Mittarit alapuolella
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Player Average", f"{player_oma_ka:.2f}")
+                with col2:
+                    st.metric("SDHL Average (filtered)", f"{sdhl_ka:.2f}")
+                with col3:
+                    if team_col:
+                        st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
 
     with tab4:
         st.subheader("Raw Data and Calculated Game Score Values")
