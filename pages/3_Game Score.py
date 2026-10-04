@@ -6,7 +6,6 @@ import plotly.express as px
 st.set_page_config(page_title="SDHL Game Score Analysis", page_icon="🏒", layout="wide")
 
 st.title("🏒 SDHL Game Score Analysis Tool (2026–2027)")
-st.write("Klikkaa mitä tahansa pelaajaa suoraan taulukosta avataksesi pelaajakortti-modaalin!")
 
 # File loading
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
@@ -133,11 +132,9 @@ if df is not None:
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
 
-        # Ylätunniste
         st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | SDHL 26/27 | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
         st.markdown("---")
 
-        # Päämetriikat
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("GAME SCORE (Avg)", f"{p_df['Game_Score'].mean():.2f}")
@@ -166,7 +163,9 @@ if df is not None:
     ])
 
     with tab1:
-        st.subheader("🏆 Player Leaderboard (Klikkaa riviä avataksesi pelaajakortin)")
+        st.subheader("🏆 Player Leaderboard")
+        st.caption("Klikkaa mitä tahansa pelaajariviä taulukosta avataksesi pelaajakortin.")
+        
         if player_col:
             group_cols = [player_col]
             if team_col in df_filtered.columns:
@@ -206,20 +205,19 @@ if df is not None:
 
             leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
-            # MUUTOS TÄSSÄ: Otetaan käyttöön st.dataframe rivivalinta (on_select)
+            # Taulukko omalla key-arvolla, jotta se reagoi vain tällä välilehdellä
             event = st.dataframe(
                 leaderboard, 
                 use_container_width=True, 
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
-                key="leaderboard_table"
+                key="leaderboard_interactive_table"
             )
 
-            # Jos käyttäjä klikkasi riviä, haetaan pelaajan nimi ja avataan dialogi automaattisesti!
-            selected_rows = event.selection.rows
-            if selected_rows:
-                clicked_index = selected_rows[0]
+            # Avataan kortti VAIN jos valinta tehdään tällä taulukolla
+            if event and event.selection and event.selection.rows:
+                clicked_index = event.selection.rows[0]
                 clicked_player = leaderboard.iloc[clicked_index]['Player']
                 show_player_card(clicked_player)
 
