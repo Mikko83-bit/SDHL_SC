@@ -32,7 +32,6 @@ def load_data(file_path):
 df = load_data(EXCEL_FILE)
 
 if df is not None:
-    # Helper functions
     def get_col(data, col_name):
         if col_name and col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
@@ -50,46 +49,47 @@ if df is not None:
                 return 0.0
         else:
             try:
+                # Jos peliaika on esim. minuutteina desimaalina tai kokonaislukuna
                 return float(val_str)
             except:
                 return 0.0
 
-    # Column mappings
-    col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
-    col_a1 = next((c for c in df.columns if c.lower() in ['first assist', 'assist 1', 'a1']), None)
-    col_a2 = next((c for c in df.columns if c.lower() in ['second assist', 'assist 2', 'a2']), None)
-    col_sog = next((c for c in df.columns if c.lower() in ['shots on goal', 'sog', 'shots']), None)
-    col_ixg = next((c for c in df.columns if c.lower() in ['ixg', 'individual xg']), None)
-    col_pt = next((c for c in df.columns if c.lower() in ['penalty time', 'pim', 'utvisningsminuter']), None)
+    # Poimitaan tarkat sarakkeet suoraan Excelin otsikoista
+    col_goals = 'Goals' if 'Goals' in df.columns else None
+    col_a1 = 'First assist' if 'First assist' in df.columns else None
+    col_a2 = 'Second assist' if 'Second assist' in df.columns else None
+    col_ixg = 'xG (Expected goals)' if 'xG (Expected goals)' in df.columns else None
+    col_pt = 'Penalty time' if 'Penalty time' in df.columns else None
     
-    col_gf = next((c for c in df.columns if c.lower() in ['plus', 'goals for', 'gf']), None)
-    col_ga = next((c for c in df.columns if c.lower() in ['minus', 'goals against', 'ga']), None)
-    col_cf = next((c for c in df.columns if c.lower() in ['corsi for', 'cf']), None)
-    col_ca = next((c for c in df.columns if c.lower() in ['corsi against', 'ca']), None)
+    col_gf = 'Plus' if 'Plus' in df.columns else None
+    col_ga = 'Minus' if 'Minus' in df.columns else None
+    col_cf = 'CORSI+' if 'CORSI+' in df.columns else None
+    col_ca = 'CORSI-' if 'CORSI-' in df.columns else None
     
-    col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
-    col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
+    col_toi = 'Time on ice' if 'Time on ice' in df.columns else None
+    col_pos = 'Position' if 'Position' in df.columns else None
+    player_col = 'Player' if 'Player' in df.columns else None
+    team_col = 'Team' if 'Team' in df.columns else None
 
     df['Goals_clean'] = get_col(df, col_goals)
-    df['Assists_clean'] = get_col(df, col_a1) + get_col(df, col_a2)
-    df['Shots_clean'] = get_col(df, col_sog)
+    df['A1_clean'] = get_col(df, col_a1)
+    df['A2_clean'] = get_col(df, col_a2)
+    df['Assists_clean'] = df['A1_clean'] + df['A2_clean']
+    
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'F'
-    df['iXG_clean'] = get_col(df, col_ixg) if col_ixg else get_col(df, col_sog) * 0.1
+    df['iXG_clean'] = get_col(df, col_ixg) if col_ixg else 0.0
     df['PT_clean'] = get_col(df, col_pt)
     df['GF_clean'] = get_col(df, col_gf)
     df['GA_clean'] = get_col(df, col_ga)
-    df['CF_clean'] = get_col(df, col_cf) if col_cf else get_col(df, col_sog)
+    df['CF_clean'] = get_col(df, col_cf)
     df['CA_clean'] = get_col(df, col_ca)
-    df['Game_Count'] = 1  # Apusarake pelattujen otteluiden laskemiseen
-
-    player_col = next((c for c in df.columns if 'player' in c.lower()), None)
-    team_col = next((c for c in df.columns if c.lower() == 'team'), None)
+    df['Game_Count'] = 1  # Ottelulaskuri
 
     # --- SIDEBAR: FILTERS ---
     st.sidebar.header("🔍 Filters")
     
-    if team_col:
+    if team_col and team_col in df.columns:
         all_teams = sorted(df[team_col].dropna().unique())
         selected_teams = st.sidebar.multiselect("Select your team:", all_teams, default=all_teams)
         df_filtered = df[df[team_col].isin(selected_teams)] if selected_teams else df.copy()
@@ -101,12 +101,12 @@ if df is not None:
     if col_pos and selected_positions:
         df_filtered = df_filtered[df_filtered['Pos_clean'].isin(selected_positions)]
 
-    min_toi_filter = st.sidebar.slider("Min. total or average time on ice:", 0.0, 30.0, 0.0, 0.5) if col_toi else 0.0
+    min_toi_filter = st.sidebar.slider("Min. average time on ice (min):", 0.0, 30.0, 0.0, 0.5)
 
     # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
-        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date')
+        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == player_name]
         if p_df.empty:
             st.warning("No data found for this player.")
             return
@@ -118,7 +118,8 @@ if df is not None:
         if total_toi > 0:
             scale_factor = 60.0 / total_toi
             p_g = p_df['Goals_clean'].sum() * scale_factor
-            p_a_tot = p_df['Assists_clean'].sum() * scale_factor
+            p_a1 = p_df['A1_clean'].sum() * scale_factor
+            p_a2 = p_df['A2_clean'].sum() * scale_factor
             p_ixg = p_df['iXG_clean'].sum() * scale_factor
             p_gf = p_df['GF_clean'].sum() * scale_factor
             p_cf = p_df['CF_clean'].sum() * scale_factor
@@ -128,7 +129,7 @@ if df is not None:
             pos = p_df['Pos_clean'].iloc[0]
             
             is_d_p = (pos == 'D')
-            off_card = (0.75 * p_g) + (0.7 * (p_a_tot * 0.6)) + (0.55 * (p_a_tot * 0.4)) + (0.5 * p_ixg) + \
+            off_card = (0.75 * p_g) + (0.7 * p_a1) + (0.55 * p_a2) + (0.5 * p_ixg) + \
                        ((0.425 if is_d_p else 0.625) * p_gf) + ((1.7 if is_d_p else 0.625) * p_cf)
             def_card = - (0.15 * p_pt) - ((0.575 if is_d_p else 0.4375) * p_ga) - ((2.3 if is_d_p else 1.75) * p_ca)
             gs_card = off_card + def_card
@@ -148,33 +149,10 @@ if df is not None:
         with col4:
             st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
 
-        st.markdown("### 📈 Season Trend Charts")
-        
-        a1_match = get_col(p_df, col_a1)
-        a2_match = get_col(p_df, col_a2)
-        p_df['Off_Match'] = (0.75 * p_df['Goals_clean']) + (0.7 * a1_match) + (0.55 * a2_match) + (0.5 * p_df['iXG_clean']) + \
-                            p_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
-        p_df['Def_Match'] = - (0.15 * p_df['PT_clean']) - p_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
-        p_df['GS_Match'] = p_df['Off_Match'] + p_df['Def_Match']
-
-        fig_gs = px.line(p_df, x='Date', y='GS_Match', markers=True, title="Game Score per Match")
-        fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-        st.plotly_chart(fig_gs, use_container_width=True)
-
-        if col_toi:
-            fig_toi = px.line(p_df, x='Date', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
-            fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-            st.plotly_chart(fig_toi, use_container_width=True)
-
     # --- NAVIGATION ---
     selected_tab = st.radio(
         "Navigation",
-        [
-            "🏆 Season Leaderboard", 
-            "📊 Player Progression", 
-            "📈 Game-by-Game Scores", 
-            "📁 Raw Data"
-        ],
+        ["🏆 Season Leaderboard", "📊 Player Progression", "📈 Game-by-Game Scores", "📁 Raw Data"],
         horizontal=True,
         label_visibility="collapsed"
     )
@@ -194,6 +172,8 @@ if df is not None:
             agg_dict = {
                 'TOI_clean': 'sum',
                 'Goals_clean': 'sum',
+                'A1_clean': 'sum',
+                'A2_clean': 'sum',
                 'Assists_clean': 'sum',
                 'iXG_clean': 'sum',
                 'PT_clean': 'sum',
@@ -216,9 +196,8 @@ if df is not None:
                 is_d = row['Pos_clean'] == 'D'
                 
                 g_val = row['Goals_clean'] * factor
-                a_tot = row['Assists_clean'] * factor
-                a1_val = a_tot * 0.6
-                a2_val = a_tot * 0.4
+                a1_val = row['A1_clean'] * factor
+                a2_val = row['A2_clean'] * factor
                 ixg_val = row['iXG_clean'] * factor
                 gf_val = row['GF_clean'] * factor
                 cf_val = row['CF_clean'] * factor
@@ -275,69 +254,6 @@ if df is not None:
                 clicked_index = event.selection.rows[0]
                 clicked_player = leaderboard.iloc[clicked_index]['Player']
                 show_player_card(clicked_player)
-
-    elif selected_tab == "📊 Player Progression":
-        st.subheader("Player Progression Curve During the Season")
-        if player_col:
-            players = sorted(df_filtered[player_col].dropna().unique())
-            if len(players) > 0:
-                selected_player = st.selectbox("Select player to view:", players, key='tab2_player')
-                
-                if st.button("Open Player Card 🃏", key='btn_card_tab2'):
-                    show_player_card(selected_player)
-
-                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date')
-
-                if not player_df.empty:
-                    a1_m = get_col(player_df, col_a1)
-                    a2_m = get_col(player_df, col_a2)
-                    player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1_m) + (0.55 * a2_m) + (0.5 * player_df['iXG_clean']) + \
-                                            player_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
-                    player_df['Def_Match'] = - (0.15 * player_df['PT_clean']) - player_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
-                    player_df['GS_Match'] = player_df['Off_Match'] + player_df['Def_Match']
-
-                    fig = px.line(
-                        player_df, x='Date', y='GS_Match', markers=True,
-                        title=f"Player {selected_player} Game Score History (Per Match)"
-                    )
-                    fig.update_layout(xaxis_type='category')
-                    st.plotly_chart(fig, use_container_width=True)
-
-    elif selected_tab == "📈 Game-by-Game Scores":
-        st.subheader("📊 Player Game-by-Game Game Score")
-        if player_col:
-            players = sorted(df_filtered[player_col].dropna().unique())
-            selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
-            
-            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date')
-            
-            if not player_df.empty:
-                a1_m = get_col(player_df, col_a1)
-                a2_m = get_col(player_df, col_a2)
-                player_df['Off_Match'] = (0.75 * player_df['Goals_clean']) + (0.7 * a1_m) + (0.55 * a2_m) + (0.5 * player_df['iXG_clean']) + \
-                                        player_df.apply(lambda r: (0.425 if r['Pos_clean']=='D' else 0.625)*r['GF_clean'] + (1.7 if r['Pos_clean']=='D' else 0.625)*r['CF_clean'], axis=1)
-                player_df['Def_Match'] = - (0.15 * player_df['PT_clean']) - player_df.apply(lambda r: (0.575 if r['Pos_clean']=='D' else 0.4375)*r['GA_clean'] + (2.3 if r['Pos_clean']=='D' else 1.75)*r['CA_clean'], axis=1)
-                player_df['GS_Match'] = player_df['Off_Match'] + player_df['Def_Match']
-
-                player_oma_ka = player_df['GS_Match'].mean()
-                
-                fig_bar = px.bar(
-                    player_df, x='Date', y='GS_Match',
-                    title=f"Player {selected_player_bar} Game Score per Game",
-                    labels={'Date': 'Game Date', 'GS_Match': 'Game Score'},
-                    text_auto='.2f'
-                )
-                fig_bar.update_traces(marker_color='#00b4d8')
-                fig_bar.update_layout(
-                    xaxis_type='category',
-                    yaxis_title="Game Score",
-                    xaxis_title="Game Date",
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)'
-                )
-
-                st.plotly_chart(fig_bar, use_container_width=True)
-                st.metric("Player Average per Game", f"{player_oma_ka:.2f}")
 
     elif selected_tab == "📁 Raw Data":
         st.subheader("Raw Data")
