@@ -36,7 +36,7 @@ if df is not None:
     def get_col(data, col_name):
         if col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
-        return 0
+        return pd.Series(0, index=data.index)
 
     def parse_toi(val):
         if pd.isna(val):
@@ -86,9 +86,20 @@ if df is not None:
     ga = get_col(df, col_ga)
 
     df['Goals_clean'] = g
+    df['A1_clean'] = a1
+    df['A2_clean'] = a2
     df['Assists_clean'] = a1 + a2
     df['Shots_clean'] = sog
     df['Block_clean'] = blk
+    df['PD_clean'] = pd_val
+    df['PT_clean'] = pt_val
+    df['FOW_clean'] = fow
+    df['FOL_clean'] = fol
+    df['XG_For_clean'] = xg_for
+    df['XG_Against_clean'] = xg_against
+    df['GF_clean'] = gf
+    df['GA_clean'] = ga
+    
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
@@ -142,13 +153,26 @@ if df is not None:
         st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | SDHL 26/27 | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
         st.markdown("---")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("GAME SCORE (Avg)", f"{p_df['Game_Score'].mean():.2f}")
         with col2:
             st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
         with col3:
             st.metric("TOTAL ASSISTS", int(p_df['Assists_clean'].sum()))
+        with col4:
+            st.metric("TOTAL SHOTS", int(p_df['Shots_clean'].sum()))
+
+        # Lisätietorivit kortille
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Blocked Shots", int(p_df['Block_clean'].sum()))
+        with c2:
+            st.metric("Penalties Drawn", int(p_df['PD_clean'].sum()))
+        with c3:
+            st.metric("Penalty Time (min)", int(p_df['PT_clean'].sum()))
+        with c4:
+            st.metric("Faceoffs Won/Lost", f"{int(p_df['FOW_clean'].sum())} / {int(p_df['FOL_clean'].sum())}")
 
         st.markdown("### 📈 Season Trend Charts")
         
@@ -161,7 +185,7 @@ if df is not None:
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             st.plotly_chart(fig_toi, use_container_width=True)
 
-    # --- NAVIGATION (Radiopainikkeet estävät välilehtien päällekkäisen suorituksen) ---
+    # --- NAVIGATION ---
     selected_tab = st.radio(
         "Navigation",
         [
@@ -177,7 +201,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard")
-        st.caption("Klikkaa mitä tahansa pelaajariviä taulukosta avataksesi pelaajakortin.")
+        st.caption("Taulukko näyttää kaikki Game Score -kaavaan vaikuttavat tilastot. Klikkaa mitä tahansa riviä avataksesi pelaajakortin.")
         
         if player_col:
             group_cols = [player_col]
@@ -192,7 +216,16 @@ if df is not None:
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
                 'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
                 'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
-                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum')
+                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
+                'Blocks': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
+                'Pen. Drawn': pd.NamedAgg(column='PD_clean', aggfunc='sum'),
+                'Pen. Time': pd.NamedAgg(column='PT_clean', aggfunc='sum'),
+                'FO Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
+                'FO Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
+                'Plus': pd.NamedAgg(column='GF_clean', aggfunc='sum'),
+                'Minus': pd.NamedAgg(column='GA_clean', aggfunc='sum'),
+                'xG For': pd.NamedAgg(column='XG_For_clean', aggfunc='sum'),
+                'xG Against': pd.NamedAgg(column='XG_Against_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -211,10 +244,10 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            if 'GS Average' in leaderboard.columns:
-                leaderboard['GS Average'] = leaderboard['GS Average'].round(2)
-            if 'GS Total' in leaderboard.columns:
-                leaderboard['GS Total'] = leaderboard['GS Total'].round(2)
+            # Pyöristetään desimaalit fiksusti
+            for col in ['GS Average', 'GS Total', 'xG For', 'xG Against']:
+                if col in leaderboard.columns:
+                    leaderboard[col] = leaderboard[col].round(2)
 
             leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
@@ -281,7 +314,6 @@ if df is not None:
                 )
                 fig_bar.update_traces(marker_color='#00b4d8')
 
-                # SDHL Average katkoviiva
                 fig_bar.add_hline(
                     y=sdhl_ka, 
                     line_dash="dash", 
@@ -291,7 +323,6 @@ if df is not None:
                     annotation_font_color="#adb5bd"
                 )
 
-                # Joukkueen keskiarvon katkoviiva
                 if team_col and not pd.isna(tiimi_ka):
                     fig_bar.add_hline(
                         y=tiimi_ka, 
@@ -302,7 +333,6 @@ if df is not None:
                         annotation_font_color="#ffb703"
                     )
 
-                # Pelaajan oman keskiarvon viiva
                 fig_bar.add_hline(
                     y=player_oma_ka, 
                     line_dash="solid", 
@@ -322,7 +352,6 @@ if df is not None:
 
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
-                # Mittarit alapuolella
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Player Average", f"{player_oma_ka:.2f}")
