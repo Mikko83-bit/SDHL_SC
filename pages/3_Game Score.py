@@ -314,7 +314,7 @@ if df is not None:
                     player_df['Game_Index'] = range(len(player_df))
                     x_axis_col = 'Game_Index'
 
-                # HALUTTU JÄRJESTYS PAKOTETULTA KATEGORIALTA
+                # HALUTTU JÄRJESTYS
                 desired_order = [
                     "Period 1", 
                     "Period 2", 
@@ -328,18 +328,23 @@ if df is not None:
                     "PP"
                 ]
 
-                # Muutetaan sarake kategoriseksi ja järjestetään DataFrame sen mukaan
+                # Ryhmitellään ja pakotetaan kategorinen järjestys suoraan kaaviota varten
                 if x_axis_col in player_df.columns:
                     player_df[x_axis_col] = player_df[x_axis_col].astype(str).str.strip()
-                    player_df[x_axis_col] = pd.Categorical(
-                        player_df[x_axis_col], 
+                    # Ryhmitellään saman kategorian arvot yhteen keskiarvolla tai summalla
+                    chart_df = player_df.groupby(x_axis_col, as_index=False)['Game_Score'].mean()
+                    
+                    chart_df[x_axis_col] = pd.Categorical(
+                        chart_df[x_axis_col], 
                         categories=desired_order, 
                         ordered=True
                     )
-                    player_df = player_df.sort_values(x_axis_col)
+                    chart_df = chart_df.sort_values(x_axis_col).dropna(subset=[x_axis_col])
+                else:
+                    chart_df = player_df
 
                 fig_bar = px.bar(
-                    player_df, x=x_axis_col, y='Game_Score',
+                    chart_df, x=x_axis_col, y='Game_Score',
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
                     labels={x_axis_col: 'Category / Date', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
