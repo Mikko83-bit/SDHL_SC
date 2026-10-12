@@ -300,4 +300,163 @@ with tab1:
         }
         for col in team_summary.columns:
             if col not in team_config:
-                team_config[col] = st.column_config.NumberColumn(col, width="
+                team_config[col] = st.column_config.NumberColumn(col, width="small")
+
+        st.dataframe(
+            team_summary,
+            use_container_width=False,
+            column_config=team_config,
+            hide_index=True,
+        )
+    else:
+        st.info("No team data available for selected filters.")
+
+with tab2:
+    st.subheader("Player Statistics with Total Score")
+    if not filtered_players.empty:
+        p_num_cols = [
+            c
+            for c in filtered_players.select_dtypes(include=["number"]).columns.tolist()
+            if c not in ["Game", "Game "]
+        ]
+        player_summary = (
+            filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
+        )
+
+        gf = (
+            player_summary["Goal For"]
+            if "Goal For" in player_summary.columns
+            else 0
+        )
+        gfi = (
+            player_summary["Goal For inv"]
+            if "Goal For inv" in player_summary.columns
+            else 0
+        )
+        cf = (
+            player_summary["Chance For"]
+            if "Chance For" in player_summary.columns
+            else 0
+        )
+        cfi = (
+            player_summary["Chance For inv"]
+            if "Chance For inv" in player_summary.columns
+            else 0
+        )
+        ga = (
+            player_summary["Goal Against"]
+            if "Goal Against" in player_summary.columns
+            else 0
+        )
+        ca = (
+            player_summary["Chance Against"]
+            if "Chance Against" in player_summary.columns
+            else 0
+        )
+
+        player_summary["Total"] = (gf + gfi + cf + cfi) - (ga + ca)
+
+        sort_col = (
+            "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
+        )
+        player_summary = player_summary.sort_values(
+            by=sort_col, ascending=False
+        ).reset_index(drop=True)
+
+        column_config = {
+            col: st.column_config.NumberColumn(col, width="small")
+            for col in player_summary.columns
+        }
+        column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+
+        st.dataframe(
+            player_summary,
+            use_container_width=False,
+            column_config=column_config,
+            hide_index=True,
+        )
+    else:
+        st.info("No player data available for selected filters.")
+
+with tab3:
+    st.subheader("Category Performance Overview (Based on Selected Metrics)")
+    chart_source = filtered_team.copy()
+    if not chart_source.empty and selected_team_metrics:
+        for_metrics = [
+            m
+            for m in selected_team_metrics
+            if "against" not in m.lower() and "ag" not in m.lower()
+        ]
+        ag_metrics = [
+            m
+            for m in selected_team_metrics
+            if "against" in m.lower() or "ag" in m.lower()
+        ]
+
+        chart_data = (
+            chart_source.groupby("Category")[selected_team_metrics].sum().reset_index()
+        )
+        chart_data["For Total"] = (
+            chart_data[for_metrics].sum(axis=1) if for_metrics else 0
+        )
+        chart_data["Against Total"] = (
+            chart_data[ag_metrics].sum(axis=1) if ag_metrics else 0
+        )
+
+        plot_df = pd.melt(
+            chart_data,
+            id_vars=["Category"],
+            value_vars=["For Total", "Against Total"],
+            var_name="Type",
+            value_name="Count",
+        )
+
+        # LUKITAAN JÄRJESTYS PANDASIN KATEGORISEKSI MUUTTUJAKSI
+        desired_category_order = [
+            "Period 1",
+            "Period 2",
+            "Period 3",
+            "OT",
+            "OZ",
+            "Rush",
+            "Takeaways",
+            "Turnovers",
+            "PP",
+            "Others",
+        ]
+        existing_order = [
+            c for c in desired_category_order if c in plot_df["Category"].unique()
+        ]
+        plot_df["Category"] = pd.Categorical(
+            plot_df["Category"], categories=existing_order, ordered=True
+        )
+        plot_df = plot_df.sort_values("Category")
+
+        fig = px.bar(
+            plot_df,
+            x="Category",
+            y="Count",
+            color="Type",
+            barmode="group",
+            color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"},
+        )
+
+        fig.update_traces(texttemplate="%{y}", textposition="outside")
+        fig.update_layout(
+            xaxis_title="Category",
+            yaxis_title="Total Count",
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Valitse vähintään yksi metriikka sivupalkista kaavion näyttämiseksi.")
+
+with tab4:
+    st.subheader("Raw Data Sheets")
+    st.markdown("### Players Sheet")
+    st.dataframe(filtered_players, use_container_width=True)
+    st.markdown("### Team Sheet")
+    st.dataframe(filtered_team, use_container_width=True)
+
