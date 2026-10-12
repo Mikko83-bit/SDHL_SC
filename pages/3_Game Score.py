@@ -75,6 +75,25 @@ if df is not None:
     if not cat_col and len(df.columns) > 5:
         cat_col = df.select_dtypes(include=['object']).columns[-1] if not df.select_dtypes(include=['object']).empty else None
 
+    # HALUTTU JÄRJESTYSMÄÄRITTELY (Globaalisti)
+    desired_order = [
+        "Period 1", 
+        "Period 2", 
+        "Period 3", 
+        "OT", 
+        "OZ", 
+        "Rush", 
+        "Turnovers", 
+        "Takeaways", 
+        "Other", 
+        "PP"
+    ]
+
+    # Jos kategoriaosasto löytyy, pakotetaan se heti DataFrameen kategoriseksi tyypiksi
+    if cat_col and cat_col in df.columns:
+        df[cat_col] = df[cat_col].astype(str).str.strip()
+        df[cat_col] = pd.Categorical(df[cat_col], categories=desired_order, ordered=True)
+
     g = get_col(df, col_goals)
     a1 = get_col(df, col_a1)
     a2 = get_col(df, col_a2)
@@ -314,28 +333,11 @@ if df is not None:
                     player_df['Game_Index'] = range(len(player_df))
                     x_axis_col = 'Game_Index'
 
-                # HALUTTU JÄRJESTYS
-                desired_order = [
-                    "Period 1", 
-                    "Period 2", 
-                    "Period 3", 
-                    "OT", 
-                    "OZ", 
-                    "Rush", 
-                    "Turnovers", 
-                    "Takeaways", 
-                    "Other", 
-                    "PP"
-                ]
-
-                # Ryhmitellään ja pakotetaan kategorinen järjestys suoraan kaaviota varten
+                # Ryhmitellään ja lajitellaan dataframe suoraan halutulla järjestyksellä
                 if x_axis_col in player_df.columns:
-                    player_df[x_axis_col] = player_df[x_axis_col].astype(str).str.strip()
-                    # Ryhmitellään saman kategorian arvot yhteen keskiarvolla tai summalla
                     chart_df = player_df.groupby(x_axis_col, as_index=False)['Game_Score'].mean()
-                    
                     chart_df[x_axis_col] = pd.Categorical(
-                        chart_df[x_axis_col], 
+                        chart_df[x_axis_col].astype(str).str.strip(), 
                         categories=desired_order, 
                         ordered=True
                     )
