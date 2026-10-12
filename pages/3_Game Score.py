@@ -1,409 +1,441 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
-# Page configuration
-st.set_page_config(page_title="SDHL Game Score Analysis", page_icon="🏒", layout="wide")
+st.set_page_config(page_title="SDHL Scoring Chances Analysis", layout="wide")
+st.title("🏒 SDHL Scoring Chances Analysis")
 
-st.title("🏒 SDHL Game Score Analysis Tool (2026–2027)")
-
-# File loading
-EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
 @st.cache_data
-def load_data(file_path):
-    try:
-        df = pd.read_excel(file_path)
-        df.columns = [str(col).strip() for col in df.columns]
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-        return df
-    except Exception as e:
-        try:
-            df = pd.read_excel(f"../{file_path}")
-            df.columns = [str(col).strip() for col in df.columns]
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-            return df
-        except Exception as e2:
-            st.error(f"Error reading file: {e2}")
-            return None
+def load_data():
+  excel_path = "SDHL 2026-2027 scoring chances.xlsx"
+  xls = pd.ExcelFile(excel_path)
 
-df = load_data(EXCEL_FILE)
+  players_df = pd.read_excel(xls, sheet_name="Players")
+  team_df = pd.read_excel(xls, sheet_name="Team")
 
-if df is not None:
-    # Helper functions
-    def get_col(data, col_name):
-        if col_name in data.columns:
-            return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
-        return pd.Series(0, index=data.index)
+  players_df.columns = players_df.columns.astype(str).str.strip()
+  team_df.columns = team_df.columns.astype(str).str.strip()
 
-    def parse_toi(val):
-        if pd.isna(val):
-            return 0.0
-        val_str = str(val).strip()
-        if ':' in val_str:
-            try:
-                parts = val_str.split(':')
-                return float(parts[0]) + (float(parts[1]) / 60.0)
-            except:
-                return 0.0
-        else:
-            try:
-                return float(val_str)
-            except:
-                return 0.0
+  if "Number" in players_df.columns:
+    players_df["Number"] = (
+        pd.to_numeric(players_df["Number"], errors="coerce")
+        .fillna(-1)
+        .astype(int)
+        .astype(str)
+    )
+    players_df.loc[players_df["Number"] == "-1", "Number"] = ""
 
-    # Column mappings
-    col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
-    col_a1 = next((c for c in df.columns if c.lower() == 'first assist'), None)
-    col_a2 = next((c for c in df.columns if c.lower() == 'second assist'), None)
-    col_sog = next((c for c in df.columns if c.lower() == 'shots on goal'), None)
-    col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
-    col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
-    col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
-    col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
-    col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
-    col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
-    col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
-    col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
-    col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
-    col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
-    col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
-    
-    cat_col = next((c for c in df.columns if any(k in c.lower() for k in ['category', 'type', 'situa', 'situation', 'event'])), None)
-    if not cat_col and len(df.columns) > 5:
-        cat_col = df.select_dtypes(include=['object']).columns[-1] if not df.select_dtypes(include=['object']).empty else None
+  p_num_cols = [
+      c
+      for c in players_df.columns
+      if c not in ["Number", "Game ", "Opponent", "Date"]
+  ]
+  for col in p_num_cols:
+    players_df[col] = pd.to_numeric(players_df[col], errors="coerce").fillna(0)
 
-    # HALUTTU JÄRJESTYSMÄÄRITTELY (Globaalisti)
+  t_num_cols = [
+      c for c in team_df.columns if c not in ["Descriptor", "Game", "Opponent", "Date"]
+  ]
+  for col in t_num_cols:
+    team_df[col] = pd.to_numeric(team_df[col], errors="coerce").fillna(0)
+
+  return players_df, team_df
+
+
+players_df, team_df = load_data()
+
+
+# LUOKITTELU: ERÄT OMIKSI KATEGORIOIKSEENAN (Period 1, Period 2, Period 3, OT)
+def classify_descriptor(desc):
+  d = str(desc).strip()
+  d_lower = d.lower()
+
+  if d_lower in ["period 1", "period 2", "period 3", "ot"]:
+    return d.title() if d_lower != "ot" else "OT"
+
+  oz_list = [
+      "oz tip",
+      "oz rr pass",
+      "oz shot+screen",
+      "oz 1 area",
+      "oz crash the net",
+      "oz reb",
+      "oz bl+screen",
+  ]
+  if d_lower in oz_list:
+    return "OZ"
+
+  rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
+  if d_lower in rush_list:
+    return "Rush"
+
+  pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
+  if d_lower in pp_list:
+    return "PP"
+
+  ta_list = ["ta dz", "ta nz", "ta oz"]
+  if d_lower in ta_list:
+    return "Takeaways"
+
+  to_list = ["turnover dz", "turnover oz", "turnover nz"]
+  if d_lower in to_list:
+    return "Turnovers"
+
+  other_list = ["empty net", "pk", "faceoff"]
+  if d_lower in other_list:
+    return "Others"
+
+  return "Others"
+
+
+team_df["Category"] = team_df["Descriptor"].apply(classify_descriptor)
+
+game_col_p = (
+    "Game "
+    if "Game " in players_df.columns
+    else ("Game" if "Game" in players_df.columns else None)
+)
+
+combined_df = pd.concat([
+    (
+        players_df[["Game ", "Opponent", "Date"]].rename(
+            columns={"Game ": "Game"}
+        )
+        if "Game " in players_df.columns
+        else pd.DataFrame(columns=["Game", "Opponent", "Date"])
+    ),
+    (
+        team_df[["Game", "Opponent", "Date"]]
+        if {"Game", "Opponent", "Date"}.issubset(team_df.columns)
+        else pd.DataFrame(columns=["Game", "Opponent", "Date"])
+    ),
+]).drop_duplicates(subset=["Game"])
+
+combined_df = combined_df.sort_values(by="Game")
+
+game_options = []
+game_mapping = {}
+
+for _, row in combined_df.iterrows():
+  g_num = row["Game"]
+  opp = row.get("Opponent", "")
+  date = row.get("Date", "")
+
+  label = f"Game {g_num}"
+  if pd.notna(opp) and str(opp).strip() != "":
+    label += f" vs {opp}"
+  if pd.notna(date) and str(date).strip() != "":
+    label += f" ({date})"
+
+  game_options.append(label)
+  game_mapping[label] = g_num
+
+if not game_options:
+  all_games = (
+      sorted(
+          list(
+              set(
+                  players_df[game_col_p].dropna().unique().tolist()
+                  + team_df["Game"].dropna().unique().tolist()
+              )
+          )
+      )
+      if game_col_p
+      else []
+  )
+  game_options = [f"Game {g}" for g in all_games]
+  game_mapping = {f"Game {g}": g for g in all_games}
+
+all_players = sorted([p for p in players_df["Number"].unique() if p != ""])
+all_categories = sorted(team_df["Category"].dropna().unique().tolist())
+
+st.sidebar.header("Filters")
+selected_labels = st.sidebar.multiselect(
+    "Select Game", options=game_options, default=game_options
+)
+selected_games = [
+    game_mapping[label] for label in selected_labels if label in game_mapping
+]
+
+default_cats = [
+    c
+    for c in [
+        "OZ",
+        "Takeaways",
+        "Turnovers",
+        "Rush",
+        "PP",
+        "Others",
+        "Period 1",
+        "Period 2",
+        "Period 3",
+        "OT",
+    ]
+    if c in all_categories
+]
+selected_categories = st.sidebar.multiselect(
+    "Select Category", options=all_categories, default=default_cats
+)
+selected_players = st.sidebar.multiselect(
+    "Select Player Number", options=all_players, default=all_players
+)
+
+all_metric_options = [
+    "Goal For",
+    "Goal For inv",
+    "Chance For",
+    "Chance For inv",
+    "PP goal",
+    "PP goal inv",
+    "PP chance",
+    "PP chance inv",
+    "Goal Against",
+    "Chance Against",
+    "PP goal ag",
+    "PP chance ag",
+]
+valid_metric_defaults = [m for m in all_metric_options if m in team_df.columns]
+selected_team_metrics = st.sidebar.multiselect(
+    "Select Team Metrics to Compare",
+    options=valid_metric_defaults,
+    default=valid_metric_defaults,
+)
+
+filtered_players = players_df.copy()
+if game_col_p and selected_games:
+  filtered_players = filtered_players[
+      filtered_players[game_col_p].isin(selected_games)
+  ]
+if "Number" in filtered_players.columns and selected_players:
+  filtered_players = filtered_players[
+      filtered_players["Number"].isin(selected_players)
+  ]
+
+filtered_team = team_df.copy()
+if "Game" in filtered_team.columns and selected_games:
+  filtered_team = filtered_team[filtered_team["Game"].isin(selected_games)]
+if "Category" in filtered_team.columns and selected_categories:
+  filtered_team = filtered_team[
+      filtered_team["Category"].isin(selected_categories)
+  ]
+
+kpi_source = (
+    filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])]
+    if not filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])].empty
+    else filtered_team
+)
+
+total_gf = (
+    int(kpi_source["Goal For"].sum() + kpi_source["PP goal"].sum())
+    if "Goal For" in kpi_source.columns
+    else 0
+)
+total_ga = (
+    int(kpi_source["Goal Against"].sum() + kpi_source["PP goal ag"].sum())
+    if "Goal Against" in kpi_source.columns
+    else 0
+)
+goals_net = total_gf - total_ga
+
+total_cf = (
+    int(kpi_source["Chance For"].sum() + kpi_source["PP chance"].sum())
+    if "Chance For" in kpi_source.columns
+    else 0
+)
+total_ca = (
+    int(kpi_source["Chance Against"].sum() + kpi_source["PP chance ag"].sum())
+    if "Chance Against" in kpi_source.columns
+    else 0
+)
+chances_net = total_cf - total_ca
+
+total_net = goals_net + chances_net
+
+# Uusi KPI-asettelu: Goals Total, Chances Total ja näiden erittelyt / nettotulokset
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Goals For / Against", f"{total_gf} / {total_ga}", f"{goals_net:+d}")
+col2.metric("Chances For / Against", f"{total_cf} / {total_ca}", f"{chances_net:+d}")
+col3.metric("Goals Total (GF)", total_gf)
+col4.metric("Chances Total (CF)", total_cf)
+col5.metric("Total (Net)", total_net)
+
+st.markdown("---")
+
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["📊 Scoring Chances Team", "👤 Scoring Chances Players", "📈 Visuals", "📄 Raw Data"]
+)
+
+with tab1:
+  st.subheader("Team Statistics by Category & Descriptor")
+  if not filtered_team.empty:
+    base_cols = ["Category", "Descriptor"]
     desired_order = [
-        "Period 1", 
-        "Period 2", 
-        "Period 3", 
-        "OT", 
-        "OZ", 
-        "Rush", 
-        "Turnovers", 
-        "Takeaways", 
-        "Other", 
-        "PP"
+        "Goal For",
+        "Chance For",
+        "PP goal",
+        "PP chance",
+        "Goal Against",
+        "Chance Against",
+        "PP goal ag",
+        "PP chance ag",
+    ]
+    available_selected = [
+        c
+        for c in desired_order
+        if c in selected_team_metrics and c in filtered_team.columns
+    ]
+    num_cols = filtered_team.select_dtypes(include=["number"]).columns.tolist()
+    num_cols = [c for c in num_cols if c != "Game"]
+
+    team_summary = filtered_team.groupby(base_cols)[num_cols].sum().reset_index()
+    cols_to_show = base_cols + available_selected
+    extra_cols = [
+        c for c in team_summary.columns if c not in cols_to_show and c not in base_cols
+    ]
+    team_summary = team_summary[base_cols + available_selected + extra_cols]
+
+    team_config = {
+        "Category": st.column_config.TextColumn("Category", width="small"),
+        "Descriptor": st.column_config.TextColumn("Descriptor", width="medium"),
+    }
+    for col in team_summary.columns:
+      if col not in team_config:
+        team_config[col] = st.column_config.NumberColumn(col, width="small")
+
+    st.dataframe(
+        team_summary,
+        use_container_width=False,
+        column_config=team_config,
+        hide_index=True,
+    )
+  else:
+    st.info("No team data available for selected filters.")
+
+with tab2:
+  st.subheader("Player Statistics with Total Score")
+  if not filtered_players.empty:
+    p_num_cols = [
+        c
+        for c in filtered_players.select_dtypes(include=["number"]).columns.tolist()
+        if c not in ["Game", "Game "]
+    ]
+    player_summary = (
+        filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
+    )
+
+    gf = (
+        player_summary["Goal For"]
+        if "Goal For" in player_summary.columns
+        else 0
+    )
+    gfi = (
+        player_summary["Goal For inv"]
+        if "Goal For inv" in player_summary.columns
+        else 0
+    )
+    cf = (
+        player_summary["Chance For"]
+        if "Chance For" in player_summary.columns
+        else 0
+    )
+    cfi = (
+        player_summary["Chance For inv"]
+        if "Chance For inv" in player_summary.columns
+        else 0
+    )
+    ga = (
+        player_summary["Goal Against"]
+        if "Goal Against" in player_summary.columns
+        else 0
+    )
+    ca = (
+        player_summary["Chance Against"]
+        if "Chance Against" in player_summary.columns
+        else 0
+    )
+
+    player_summary["Total"] = (gf + gfi + cf + cfi) - (ga + ca)
+
+    sort_col = (
+        "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
+    )
+    player_summary = player_summary.sort_values(
+        by=sort_col, ascending=False
+    ).reset_index(drop=True)
+
+    column_config = {
+        col: st.column_config.NumberColumn(col, width="small")
+        for col in player_summary.columns
+    }
+    column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+
+    st.dataframe(
+        player_summary,
+        use_container_width=False,
+        column_config=column_config,
+        hide_index=True,
+    )
+  else:
+    st.info("No player data available for selected filters.")
+
+with tab3:
+  st.subheader("Category Performance Overview (Based on Selected Metrics)")
+  chart_source = filtered_team.copy()
+  if not chart_source.empty and selected_team_metrics:
+    for_metrics = [
+        m
+        for m in selected_team_metrics
+        if "against" not in m.lower() and "ag" not in m.lower()
+    ]
+    ag_metrics = [
+        m
+        for m in selected_team_metrics
+        if "against" in m.lower() or "ag" in m.lower()
     ]
 
-    # Jos kategoriaosasto löytyy, pakotetaan se heti DataFrameen kategoriseksi tyypiksi
-    if cat_col and cat_col in df.columns:
-        df[cat_col] = df[cat_col].astype(str).str.strip()
-        df[cat_col] = pd.Categorical(df[cat_col], categories=desired_order, ordered=True)
-
-    g = get_col(df, col_goals)
-    a1 = get_col(df, col_a1)
-    a2 = get_col(df, col_a2)
-    sog = get_col(df, col_sog)
-    blk = get_col(df, col_blk)
-    pd_val = get_col(df, col_pd)
-    pt_val = get_col(df, col_pt)
-    fow = get_col(df, col_fow)
-    fol = get_col(df, col_fol)
-    xg_for = get_col(df, col_xg_on)
-    xg_against = get_col(df, col_opp_xg_on)
-    gf = get_col(df, col_gf)
-    ga = get_col(df, col_ga)
-
-    df['Goals_clean'] = g
-    df['A1_clean'] = a1
-    df['A2_clean'] = a2
-    df['Assists_clean'] = a1 + a2
-    df['Shots_clean'] = sog
-    df['Block_clean'] = blk
-    df['PD_clean'] = pd_val
-    df['PT_clean'] = pt_val
-    df['FOW_clean'] = fow
-    df['FOL_clean'] = fol
-    df['XG_For_clean'] = xg_for
-    df['XG_Against_clean'] = xg_against
-    df['GF_clean'] = gf
-    df['GA_clean'] = ga
-    
-    df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
-    df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
-
-    df['Game_Score'] = (
-        (0.75 * g) + (0.7 * a1) + (0.55 * a2) + (0.075 * sog) + 
-        (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
-        (0.01 * fow) - (0.01 * fol) + (0.05 * xg_for) - 
-        (0.05 * xg_against) + (0.15 * gf) - (0.15 * ga)
+    chart_data = (
+        chart_source.groupby("Category")[selected_team_metrics].sum().reset_index()
+    )
+    chart_data["For Total"] = (
+        chart_data[for_metrics].sum(axis=1) if for_metrics else 0
+    )
+    chart_data["Against Total"] = (
+        chart_data[ag_metrics].sum(axis=1) if ag_metrics else 0
     )
 
-    player_col = next((c for c in df.columns if 'player' in c.lower()), None)
-    team_col = next((c for c in df.columns if c.lower() == 'team'), None)
-    opponent_col = next((c for c in df.columns if 'opponent' in c.lower()), None)
-
-    # --- SIDEBAR: FILTERS ---
-    st.sidebar.header("🔍 Filters")
-    
-    if team_col:
-        all_teams = sorted(df[team_col].dropna().unique())
-        selected_teams = st.sidebar.multiselect("Select your team:", all_teams, default=all_teams)
-        df_filtered = df[df[team_col].isin(selected_teams)] if selected_teams else df.copy()
-    else:
-        df_filtered = df.copy()
-
-    st.sidebar.subheader("🏒 Position")
-    selected_positions = st.sidebar.multiselect("Select position:", ['F', 'D'], default=['F', 'D'])
-    if col_pos and selected_positions:
-        df_filtered = df_filtered[df_filtered['Pos_clean'].isin(selected_positions)]
-
-    min_toi_filter = st.sidebar.slider("Min. average time on ice (min/game):", 0.0, 30.0, 0.0, 0.5) if col_toi else 0.0
-
-    if player_col and col_toi:
-        player_toi_means = df_filtered.groupby(player_col)['TOI_clean'].mean()
-        regular_players = player_toi_means[player_toi_means >= min_toi_filter].index
-        df_vertailu = df_filtered[df_filtered[player_col].isin(regular_players)]
-    else:
-        df_vertailu = df_filtered
-
-    # --- PLAYER CARD DIALOG ---
-    @st.dialog("Player Card", width="large")
-    def show_player_card(player_name):
-        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == player_name]
-        if p_df.empty:
-            st.warning("No data found for this player.")
-            return
-
-        team_val = p_df[team_col].iloc[0] if team_col else "SDHL"
-        gp = len(p_df)
-        total_toi = p_df['TOI_clean'].sum()
-
-        st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | SDHL 26/27 | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
-        st.markdown("---")
-
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("GAME SCORE (Avg)", f"{p_df['Game_Score'].mean():.2f}")
-        with col2:
-            st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
-        with col3:
-            st.metric("TOTAL ASSISTS", int(p_df['Assists_clean'].sum()))
-        with col4:
-            st.metric("TOTAL SHOTS", int(p_df['Shots_clean'].sum()))
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Blocked Shots", int(p_df['Block_clean'].sum()))
-        with c2:
-            st.metric("Penalties Drawn", int(p_df['PD_clean'].sum()))
-        with c3:
-            st.metric("Penalty Time (min)", int(p_df['PT_clean'].sum()))
-        with c4:
-            st.metric("Faceoffs Won/Lost", f"{int(p_df['FOW_clean'].sum())} / {int(p_df['FOL_clean'].sum())}")
-
-        st.markdown("### 📈 Season Trend Charts")
-        
-        if 'Date' in p_df.columns:
-            fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
-            fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-            st.plotly_chart(fig_gs, use_container_width=True)
-
-        if col_toi and 'Date' in p_df.columns:
-            fig_toi = px.line(p_df, x='Date', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
-            fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-            st.plotly_chart(fig_toi, use_container_width=True)
-
-    # --- NAVIGATION ---
-    selected_tab = st.radio(
-        "Navigation",
-        [
-            "🏆 Season Leaderboard", 
-            "📊 Player Progression", 
-            "📈 Game-by-Game Scores", 
-            "📁 Raw Data"
-        ],
-        horizontal=True,
-        label_visibility="collapsed"
+    plot_df = pd.melt(
+        chart_data,
+        id_vars=["Category"],
+        value_vars=["For Total", "Against Total"],
+        var_name="Type",
+        value_name="Count",
     )
-    st.markdown("---")
 
-    if selected_tab == "🏆 Season Leaderboard":
-        st.subheader("🏆 Player Leaderboard")
-        st.caption("Taulukko näyttää kaikki Game Score -kaavaan vaikuttavat tilastot. Klikkaa mitä tahansa riviä avataksesi pelaajakortin.")
-        
-        if player_col:
-            group_cols = [player_col]
-            if team_col in df_filtered.columns:
-                group_cols.append(team_col)
-            if col_pos:
-                group_cols.append('Pos_clean')
+    fig = px.bar(
+        plot_df,
+        x="Category",
+        y="Count",
+        color="Type",
+        barmode="group",
+        color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"},
+    )
 
-            agg_kwargs = {
-                'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
-                'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
-                'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
-                'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
-                'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
-                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
-                'Blocks': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
-                'Pen. Drawn': pd.NamedAgg(column='PD_clean', aggfunc='sum'),
-                'Pen. Time': pd.NamedAgg(column='PT_clean', aggfunc='sum'),
-                'FO Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
-                'FO Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
-                'Plus': pd.NamedAgg(column='GF_clean', aggfunc='sum'),
-                'Minus': pd.NamedAgg(column='GA_clean', aggfunc='sum'),
-                'xG For': pd.NamedAgg(column='XG_For_clean', aggfunc='sum'),
-                'xG Against': pd.NamedAgg(column='XG_Against_clean', aggfunc='sum')
-            }
-            if col_toi:
-                agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
+    fig.update_traces(texttemplate="%{y}", textposition="outside")
+    fig.update_layout(
+        xaxis_title="Category",
+        yaxis_title="Total Count",
+        uniformtext_minsize=8,
+        uniformtext_mode="hide",
+    )
 
-            leaderboard = df_filtered.groupby(group_cols).agg(**agg_kwargs).reset_index()
+    st.plotly_chart(fig, use_container_width=True)
+  else:
+    st.warning("Valitse vähintään yksi metriikka sivupalkista kaavion näyttämiseksi.")
 
-            rename_map = {player_col: 'Player'}
-            if team_col in df_filtered.columns:
-                rename_map[team_col] = 'Team'
-            if col_pos:
-                rename_map['Pos_clean'] = 'Position'
-            
-            leaderboard = leaderboard.rename(columns=rename_map)
-
-            if col_toi and min_toi_filter > 0 and 'Avg. Time on Ice (min)' in leaderboard.columns:
-                leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
-                leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
-
-            for col in ['GS Average', 'GS Total', 'xG For', 'xG Against']:
-                if col in leaderboard.columns:
-                    leaderboard[col] = leaderboard[col].round(2)
-
-            leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
-
-            event = st.dataframe(
-                leaderboard, 
-                use_container_width=True, 
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="leaderboard_interactive_table"
-            )
-
-            if event and event.selection and event.selection.rows:
-                clicked_index = event.selection.rows[0]
-                clicked_player = leaderboard.iloc[clicked_index]['Player']
-                show_player_card(clicked_player)
-
-    elif selected_tab == "📊 Player Progression":
-        st.subheader("Player Progression Curve During the Season")
-        if player_col:
-            players = sorted(df_filtered[player_col].dropna().unique())
-            if len(players) > 0:
-                selected_player = st.selectbox("Select player to view:", players, key='tab2_player')
-                
-                if st.button("Open Player Card 🃏", key='btn_card_tab2'):
-                    show_player_card(selected_player)
-
-                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player]
-
-                if not player_df.empty and 'Date' in player_df.columns:
-                    fig = px.line(
-                        player_df, x='Date', y='Game_Score', markers=True,
-                        title=f"Player {selected_player} Game Score Game History"
-                    )
-                    fig.update_layout(xaxis_type='category')
-                    st.plotly_chart(fig, use_container_width=True)
-
-    elif selected_tab == "📈 Game-by-Game Scores":
-        st.subheader("📊 Player Game-by-Game Game Score vs Averages")
-        if player_col:
-            players = sorted(df_filtered[player_col].dropna().unique())
-            selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
-            
-            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player_bar]
-            
-            if not player_df.empty:
-                player_oma_ka = player_df['Game_Score'].mean()
-                sdhl_ka = df_vertailu['Game_Score'].mean()
-                
-                if team_col:
-                    pelaajan_tiimi = player_df[team_col].iloc[0]
-                    tiimi_df = df_vertailu[df_vertailu[team_col] == pelaajan_tiimi]
-                    tiimi_ka = tiimi_df['Game_Score'].mean() if not tiimi_df.empty else 0
-                    tiimi_nimi = pelaajan_tiimi
-                else:
-                    tiimi_ka = None
-                    tiimi_nimi = "Team"
-
-                x_axis_col = 'Date' if 'Date' in player_df.columns else cat_col
-                if not x_axis_col:
-                    player_df['Game_Index'] = range(len(player_df))
-                    x_axis_col = 'Game_Index'
-
-                # Ryhmitellään ja lajitellaan dataframe suoraan halutulla järjestyksellä
-                if x_axis_col in player_df.columns:
-                    chart_df = player_df.groupby(x_axis_col, as_index=False)['Game_Score'].mean()
-                    chart_df[x_axis_col] = pd.Categorical(
-                        chart_df[x_axis_col].astype(str).str.strip(), 
-                        categories=desired_order, 
-                        ordered=True
-                    )
-                    chart_df = chart_df.sort_values(x_axis_col).dropna(subset=[x_axis_col])
-                else:
-                    chart_df = player_df
-
-                fig_bar = px.bar(
-                    chart_df, x=x_axis_col, y='Game_Score',
-                    title=f"Player {selected_player_bar} Game-by-Game Game Score",
-                    labels={x_axis_col: 'Category / Date', 'Game_Score': 'Game Score'},
-                    text_auto='.2f'
-                )
-                fig_bar.update_traces(marker_color='#00b4d8')
-
-                fig_bar.add_hline(
-                    y=sdhl_ka, 
-                    line_dash="dash", 
-                    line_color="#adb5bd", 
-                    annotation_text=f"SDHL Average ({sdhl_ka:.2f})", 
-                    annotation_position="bottom right",
-                    annotation_font_color="#adb5bd"
-                )
-
-                if team_col and not pd.isna(tiimi_ka):
-                    fig_bar.add_hline(
-                        y=tiimi_ka, 
-                        line_dash="dot", 
-                        line_color="#ffb703", 
-                        annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})", 
-                        annotation_position="top right",
-                        annotation_font_color="#ffb703"
-                    )
-
-                fig_bar.add_hline(
-                    y=player_oma_ka, 
-                    line_dash="solid", 
-                    line_color="#2ec4b6", 
-                    annotation_text=f"Player Average ({player_oma_ka:.2f})", 
-                    annotation_position="bottom left",
-                    annotation_font_color="#2ec4b6"
-                )
-
-                fig_bar.update_layout(
-                    xaxis_type='category',
-                    yaxis_title="Game Score",
-                    xaxis_title="Category / Date",
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(
-                        categoryorder="array",
-                        categoryarray=desired_order
-                    )
-                )
-
-                st.plotly_chart(fig_bar, use_container_width=True)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Player Average", f"{player_oma_ka:.2f}")
-                with col2:
-                    st.metric("SDHL Average (filtered)", f"{sdhl_ka:.2f}")
-                with col3:
-                    if team_col:
-                        st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
-
-    elif selected_tab == "📁 Raw Data":
-        st.subheader("Raw Data and Calculated Game Score Values")
-        st.dataframe(df_filtered, use_container_width=True)
+with tab4:
+  st.subheader("Raw Data Sheets")
+  st.markdown("### Players Sheet")
+  st.dataframe(filtered_players, use_container_width=True)
+  st.markdown("### Team Sheet")
+  st.dataframe(filtered_team, use_container_width=True)
