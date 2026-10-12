@@ -8,39 +8,39 @@ st.title("🏒 SDHL Scoring Chances Analysis")
 
 @st.cache_data
 def load_data():
-  excel_path = "SDHL 2026-2027 scoring chances.xlsx"
-  xls = pd.ExcelFile(excel_path)
+    excel_path = "SDHL 2026-2027 scoring chances.xlsx"
+    xls = pd.ExcelFile(excel_path)
 
-  players_df = pd.read_excel(xls, sheet_name="Players")
-  team_df = pd.read_excel(xls, sheet_name="Team")
+    players_df = pd.read_excel(xls, sheet_name="Players")
+    team_df = pd.read_excel(xls, sheet_name="Team")
 
-  players_df.columns = players_df.columns.astype(str).str.strip()
-  team_df.columns = team_df.columns.astype(str).str.strip()
+    players_df.columns = players_df.columns.astype(str).str.strip()
+    team_df.columns = team_df.columns.astype(str).str.strip()
 
-  if "Number" in players_df.columns:
-    players_df["Number"] = (
-        pd.to_numeric(players_df["Number"], errors="coerce")
-        .fillna(-1)
-        .astype(int)
-        .astype(str)
-    )
-    players_df.loc[players_df["Number"] == "-1", "Number"] = ""
+    if "Number" in players_df.columns:
+        players_df["Number"] = (
+            pd.to_numeric(players_df["Number"], errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            .astype(str)
+        )
+        players_df.loc[players_df["Number"] == "-1", "Number"] = ""
 
-  p_num_cols = [
-      c
-      for c in players_df.columns
-      if c not in ["Number", "Game ", "Opponent", "Date"]
-  ]
-  for col in p_num_cols:
-    players_df[col] = pd.to_numeric(players_df[col], errors="coerce").fillna(0)
+    p_num_cols = [
+        c
+        for c in players_df.columns
+        if c not in ["Number", "Game ", "Opponent", "Date"]
+    ]
+    for col in p_num_cols:
+        players_df[col] = pd.to_numeric(players_df[col], errors="coerce").fillna(0)
 
-  t_num_cols = [
-      c for c in team_df.columns if c not in ["Descriptor", "Game", "Opponent", "Date"]
-  ]
-  for col in t_num_cols:
-    team_df[col] = pd.to_numeric(team_df[col], errors="coerce").fillna(0)
+    t_num_cols = [
+        c for c in team_df.columns if c not in ["Descriptor", "Game", "Opponent", "Date"]
+    ]
+    for col in t_num_cols:
+        team_df[col] = pd.to_numeric(team_df[col], errors="coerce").fillna(0)
 
-  return players_df, team_df
+    return players_df, team_df
 
 
 players_df, team_df = load_data()
@@ -48,45 +48,45 @@ players_df, team_df = load_data()
 
 # LUOKITTELU: ERÄT OMIKSI KATEGORIOIKSEENAN (Period 1, Period 2, Period 3, OT)
 def classify_descriptor(desc):
-  d = str(desc).strip()
-  d_lower = d.lower()
+    d = str(desc).strip()
+    d_lower = d.lower()
 
-  if d_lower in ["period 1", "period 2", "period 3", "ot"]:
-    return d.title() if d_lower != "ot" else "OT"
+    if d_lower in ["period 1", "period 2", "period 3", "ot"]:
+        return d.title() if d_lower != "ot" else "OT"
 
-  oz_list = [
-      "oz tip",
-      "oz rr pass",
-      "oz shot+screen",
-      "oz 1 area",
-      "oz crash the net",
-      "oz reb",
-      "oz bl+screen",
-  ]
-  if d_lower in oz_list:
-    return "OZ"
+    oz_list = [
+        "oz tip",
+        "oz rr pass",
+        "oz shot+screen",
+        "oz 1 area",
+        "oz crash the net",
+        "oz reb",
+        "oz bl+screen",
+    ]
+    if d_lower in oz_list:
+        return "OZ"
 
-  rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
-  if d_lower in rush_list:
-    return "Rush"
+    rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
+    if d_lower in rush_list:
+        return "Rush"
 
-  pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
-  if d_lower in pp_list:
-    return "PP"
+    pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
+    if d_lower in pp_list:
+        return "PP"
 
-  ta_list = ["ta dz", "ta nz", "ta oz"]
-  if d_lower in ta_list:
-    return "Takeaways"
+    ta_list = ["ta dz", "ta nz", "ta oz"]
+    if d_lower in ta_list:
+        return "Takeaways"
 
-  to_list = ["turnover dz", "turnover oz", "turnover nz"]
-  if d_lower in to_list:
-    return "Turnovers"
+    to_list = ["turnover dz", "turnover oz", "turnover nz"]
+    if d_lower in to_list:
+        return "Turnovers"
 
-  other_list = ["empty net", "pk", "faceoff"]
-  if d_lower in other_list:
+    other_list = ["empty net", "pk", "faceoff"]
+    if d_lower in other_list:
+        return "Others"
+
     return "Others"
-
-  return "Others"
 
 
 team_df["Category"] = team_df["Descriptor"].apply(classify_descriptor)
@@ -118,34 +118,34 @@ game_options = []
 game_mapping = {}
 
 for _, row in combined_df.iterrows():
-  g_num = row["Game"]
-  opp = row.get("Opponent", "")
-  date = row.get("Date", "")
+    g_num = row["Game"]
+    opp = row.get("Opponent", "")
+    date = row.get("Date", "")
 
-  label = f"Game {g_num}"
-  if pd.notna(opp) and str(opp).strip() != "":
-    label += f" vs {opp}"
-  if pd.notna(date) and str(date).strip() != "":
-    label += f" ({date})"
+    label = f"Game {g_num}"
+    if pd.notna(opp) and str(opp).strip() != "":
+        label += f" vs {opp}"
+    if pd.notna(date) and str(date).strip() != "":
+        label += f" ({date})"
 
-  game_options.append(label)
-  game_mapping[label] = g_num
+    game_options.append(label)
+    game_mapping[label] = g_num
 
 if not game_options:
-  all_games = (
-      sorted(
-          list(
-              set(
-                  players_df[game_col_p].dropna().unique().tolist()
-                  + team_df["Game"].dropna().unique().tolist()
-              )
-          )
-      )
-      if game_col_p
-      else []
-  )
-  game_options = [f"Game {g}" for g in all_games]
-  game_mapping = {f"Game {g}": g for g in all_games}
+    all_games = (
+        sorted(
+            list(
+                set(
+                    players_df[game_col_p].dropna().unique().tolist()
+                    + team_df["Game"].dropna().unique().tolist()
+                )
+            )
+        )
+        if game_col_p
+        else []
+    )
+    game_options = [f"Game {g}" for g in all_games]
+    game_mapping = {f"Game {g}": g for g in all_games}
 
 all_players = sorted([p for p in players_df["Number"].unique() if p != ""])
 all_categories = sorted(team_df["Category"].dropna().unique().tolist())
@@ -204,21 +204,21 @@ selected_team_metrics = st.sidebar.multiselect(
 
 filtered_players = players_df.copy()
 if game_col_p and selected_games:
-  filtered_players = filtered_players[
-      filtered_players[game_col_p].isin(selected_games)
-  ]
+    filtered_players = filtered_players[
+        filtered_players[game_col_p].isin(selected_games)
+    ]
 if "Number" in filtered_players.columns and selected_players:
-  filtered_players = filtered_players[
-      filtered_players["Number"].isin(selected_players)
-  ]
+    filtered_players = filtered_players[
+        filtered_players["Number"].isin(selected_players)
+    ]
 
 filtered_team = team_df.copy()
 if "Game" in filtered_team.columns and selected_games:
-  filtered_team = filtered_team[filtered_team["Game"].isin(selected_games)]
+    filtered_team = filtered_team[filtered_team["Game"].isin(selected_games)]
 if "Category" in filtered_team.columns and selected_categories:
-  filtered_team = filtered_team[
-      filtered_team["Category"].isin(selected_categories)
-  ]
+    filtered_team = filtered_team[
+        filtered_team["Category"].isin(selected_categories)
+    ]
 
 kpi_source = (
     filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])]
@@ -266,5 +266,38 @@ tab1, tab2, tab3, tab4 = st.tabs(
 )
 
 with tab1:
-  st.subheader("Team Statistics by Category & Descriptor")
-  if not filtered_team.empty
+    st.subheader("Team Statistics by Category & Descriptor")
+    if not filtered_team.empty:
+        base_cols = ["Category", "Descriptor"]
+        desired_order = [
+            "Goal For",
+            "Chance For",
+            "PP goal",
+            "PP chance",
+            "Goal Against",
+            "Chance Against",
+            "PP goal ag",
+            "PP chance ag",
+        ]
+        available_selected = [
+            c
+            for c in desired_order
+            if c in selected_team_metrics and c in filtered_team.columns
+        ]
+        num_cols = filtered_team.select_dtypes(include=["number"]).columns.tolist()
+        num_cols = [c for c in num_cols if c != "Game"]
+
+        team_summary = filtered_team.groupby(base_cols)[num_cols].sum().reset_index()
+        cols_to_show = base_cols + available_selected
+        extra_cols = [
+            c for c in team_summary.columns if c not in cols_to_show and c not in base_cols
+        ]
+        team_summary = team_summary[base_cols + available_selected + extra_cols]
+
+        team_config = {
+            "Category": st.column_config.TextColumn("Category", width="small"),
+            "Descriptor": st.column_config.TextColumn("Descriptor", width="medium"),
+        }
+        for col in team_summary.columns:
+            if col not in team_config:
+                team_config[col] = st.column_config.NumberColumn(col, width="
