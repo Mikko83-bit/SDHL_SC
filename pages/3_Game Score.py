@@ -71,10 +71,8 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
     
-    # Etsitään sarake, joka vastaa tuota kuvan kategoriaa/otsikkoa
     cat_col = next((c for c in df.columns if any(k in c.lower() for k in ['category', 'type', 'situa', 'situation', 'event'])), None)
     if not cat_col and len(df.columns) > 5:
-        # Arvataan sarakkeen paikka tai käytetään ensimmäistä merkkijonosaraketta
         cat_col = df.select_dtypes(include=['object']).columns[-1] if not df.select_dtypes(include=['object']).empty else None
 
     g = get_col(df, col_goals)
@@ -311,13 +309,12 @@ if df is not None:
                     tiimi_ka = None
                     tiimi_nimi = "Team"
 
-                # Varmistetaan x-akselin sarake ja järjestys kaaviossa
                 x_axis_col = 'Date' if 'Date' in player_df.columns else cat_col
                 if not x_axis_col:
                     player_df['Game_Index'] = range(len(player_df))
                     x_axis_col = 'Game_Index'
 
-                # Haluttu järjestys sille, jos sarake sisältää kyseisiä kategorioita
+                # HALUTTU JÄRJESTYS PAKOTETULTA KATEGORIALTA
                 desired_order = [
                     "Period 1", 
                     "Period 2", 
@@ -330,6 +327,16 @@ if df is not None:
                     "Other", 
                     "PP"
                 ]
+
+                # Muutetaan sarake kategoriseksi ja järjestetään DataFrame sen mukaan
+                if x_axis_col in player_df.columns:
+                    player_df[x_axis_col] = player_df[x_axis_col].astype(str).str.strip()
+                    player_df[x_axis_col] = pd.Categorical(
+                        player_df[x_axis_col], 
+                        categories=desired_order, 
+                        ordered=True
+                    )
+                    player_df = player_df.sort_values(x_axis_col)
 
                 fig_bar = px.bar(
                     player_df, x=x_axis_col, y='Game_Score',
