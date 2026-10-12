@@ -163,7 +163,6 @@ if df is not None:
         with col4:
             st.metric("TOTAL SHOTS", int(p_df['Shots_clean'].sum()))
 
-        # Lisätietorivit kortille
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.metric("Blocked Shots", int(p_df['Block_clean'].sum()))
@@ -244,7 +243,6 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            # Pyöristetään desimaalit fiksusti
             for col in ['GS Average', 'GS Total', 'xG For', 'xG Against']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
@@ -342,12 +340,30 @@ if df is not None:
                     annotation_font_color="#2ec4b6"
                 )
 
+                # Määritellään haluttu järjestys kaaviolle
+                desired_order = [
+                    "Period 1", 
+                    "Period 2", 
+                    "Period 3", 
+                    "OT", 
+                    "OZ", 
+                    "Rush", 
+                    "Turnovers", 
+                    "Takeaways", 
+                    "Other", 
+                    "PP"
+                ]
+
                 fig_bar.update_layout(
                     xaxis_type='category',
                     yaxis_title="Game Score",
                     xaxis_title="Game Date",
                     plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)'
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=desired_order
+                    )
                 )
 
                 st.plotly_chart(fig_bar, use_container_width=True)
