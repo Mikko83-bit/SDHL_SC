@@ -36,7 +36,7 @@ if df is not None:
     def get_col(data, col_name):
         if col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
-        return 0
+        return pd.Series(0, index=data.index)
 
     def parse_toi(val):
         if pd.isna(val):
@@ -130,7 +130,7 @@ if df is not None:
     # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
-        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date')
+        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == player_name]
         if p_df.empty:
             st.warning("No data found for this player.")
             return
@@ -152,16 +152,17 @@ if df is not None:
 
         st.markdown("### 📈 Season Trend Charts")
         
-        fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
-        fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-        st.plotly_chart(fig_gs, use_container_width=True)
+        if 'Date' in p_df.columns:
+            fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
+            fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
+            st.plotly_chart(fig_gs, use_container_width=True)
 
-        if col_toi:
+        if col_toi and 'Date' in p_df.columns:
             fig_toi = px.line(p_df, x='Date', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             st.plotly_chart(fig_toi, use_container_width=True)
 
-    # --- NAVIGATION (Radiopainikkeet estävät välilehtien päällekkäisen suorituksen) ---
+    # --- NAVIGATION ---
     selected_tab = st.radio(
         "Navigation",
         [
@@ -242,9 +243,9 @@ if df is not None:
                 if st.button("Open Player Card 🃏", key='btn_card_tab2'):
                     show_player_card(selected_player)
 
-                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date')
+                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player]
 
-                if not player_df.empty:
+                if not player_df.empty and 'Date' in player_df.columns:
                     fig = px.line(
                         player_df, x='Date', y='Game_Score', markers=True,
                         title=f"Player {selected_player} Game Score Game History"
@@ -258,7 +259,7 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
-            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date')
+            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player_bar]
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
@@ -273,15 +274,16 @@ if df is not None:
                     tiimi_ka = None
                     tiimi_nimi = "Team"
 
+                x_axis_col = 'Date' if 'Date' in player_df.columns else player_df.columns[0]
+
                 fig_bar = px.bar(
-                    player_df, x='Date', y='Game_Score',
+                    player_df, x=x_axis_col, y='Game_Score',
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
-                    labels={'Date': 'Game Date', 'Game_Score': 'Game Score'},
+                    labels={x_axis_col: 'Game Date / Index', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
                 fig_bar.update_traces(marker_color='#00b4d8')
 
-                # SDHL Average katkoviiva
                 fig_bar.add_hline(
                     y=sdhl_ka, 
                     line_dash="dash", 
@@ -291,7 +293,6 @@ if df is not None:
                     annotation_font_color="#adb5bd"
                 )
 
-                # Joukkueen keskiarvon katkoviiva
                 if team_col and not pd.isna(tiimi_ka):
                     fig_bar.add_hline(
                         y=tiimi_ka, 
@@ -302,7 +303,6 @@ if df is not None:
                         annotation_font_color="#ffb703"
                     )
 
-                # Pelaajan oman keskiarvon viiva
                 fig_bar.add_hline(
                     y=player_oma_ka, 
                     line_dash="solid", 
@@ -315,14 +315,13 @@ if df is not None:
                 fig_bar.update_layout(
                     xaxis_type='category',
                     yaxis_title="Game Score",
-                    xaxis_title="Game Date",
+                    xaxis_title="Game Date / Index",
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
 
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
-                # Mittarit alapuolella
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Player Average", f"{player_oma_ka:.2f}")
