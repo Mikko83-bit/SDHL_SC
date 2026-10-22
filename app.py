@@ -45,7 +45,7 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Pelaajien nimikartta numeroiden perusteella (lisätty #44 Ebba Hörnqvist)
+# Pelaajien nimikartta numeroiden perusteella
 player_names = {
     6: "Jenni Hiirikoski",
     8: "Hedvig Sturk",
@@ -396,11 +396,9 @@ with tab2:
         player_summary["Num_Int"] = pd.to_numeric(
             player_summary["Number"], errors="coerce"
         )
-        
-        # Haetaan nimi sanakirjasta
         player_summary["Name"] = player_summary["Num_Int"].map(player_names)
 
-        # 🛑 SUODATETAAN POIS NE NUMEROT, JOILLA EI OLE NIMEÄ
+        # Suodatetaan pois pelaajat joilla ei ole nimeä sanakirjassa
         player_summary = player_summary.dropna(subset=["Name"])
 
         player_summary = player_summary.sort_values(
@@ -408,34 +406,67 @@ with tab2:
         ).reset_index(drop=True)
 
         if not player_summary.empty:
-            st.markdown("### 🏆 Top Players by Total Score")
-            top_players = player_summary.head(10).copy()
-            top_players["Player_Label"] = (
-                "#"
-                + top_players["Number"].astype(str)
-                + " "
-                + top_players["Name"]
-            )
+            col_top, col_bot = st.columns(2)
 
-            fig_top = px.bar(
-                top_players,
-                x="Total",
-                y="Player_Label",
-                orientation="h",
-                text="Total",
-                color="Total",
-                color_continuous_scale="Viridis",
-                title="Top 10 Players Impact (Total Score)",
-            )
-            fig_top.update_layout(
-                yaxis=dict(type="category", autorange="reversed"),
-                xaxis_title="Total Score Net Balance",
-                yaxis_title="Player",
-                showlegend=False,
-                height=400,
-            )
-            fig_top.update_traces(textposition="outside")
-            st.plotly_chart(fig_top, use_container_width=True)
+            # 🟢 TOP 5 PARHAAT
+            with col_top:
+                st.markdown("### 🟢 Top 5 Players (Best Net Impact)")
+                top_players = player_summary.head(5).copy()
+                top_players["Player_Label"] = (
+                    "#" + top_players["Number"].astype(str) + " " + top_players["Name"]
+                )
+
+                fig_top = px.bar(
+                    top_players,
+                    x="Total",
+                    y="Player_Label",
+                    orientation="h",
+                    text="Total",
+                    color="Total",
+                    color_continuous_scale="Greens",
+                    title="Top 5 Impact",
+                )
+                fig_top.update_layout(
+                    yaxis=dict(type="category", autorange="reversed"),
+                    xaxis_title="Total Score Net Balance",
+                    yaxis_title="Player",
+                    showlegend=False,
+                    height=300,
+                )
+                fig_top.update_traces(textposition="outside")
+                st.plotly_chart(fig_top, use_container_width=True)
+
+            # 🔴 BOTTOM 5 HEIKOIMMAT
+            with col_bot:
+                st.markdown("### 🔴 Bottom 5 Players (Lowest Net Impact)")
+                bot_players = (
+                    player_summary.tail(5)
+                    .copy()
+                    .sort_values(by="Total", ascending=True)
+                )
+                bot_players["Player_Label"] = (
+                    "#" + bot_players["Number"].astype(str) + " " + bot_players["Name"]
+                )
+
+                fig_bot = px.bar(
+                    bot_players,
+                    x="Total",
+                    y="Player_Label",
+                    orientation="h",
+                    text="Total",
+                    color="Total",
+                    color_continuous_scale="Reds_r",
+                    title="Bottom 5 Impact",
+                )
+                fig_bot.update_layout(
+                    yaxis=dict(type="category", autorange="reversed"),
+                    xaxis_title="Total Score Net Balance",
+                    yaxis_title="Player",
+                    showlegend=False,
+                    height=300,
+                )
+                fig_bot.update_traces(textposition="outside")
+                st.plotly_chart(fig_bot, use_container_width=True)
 
             st.markdown("---")
             st.markdown("### Player Statistics Table")
