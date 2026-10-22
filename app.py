@@ -382,12 +382,36 @@ with tab2:
 
         player_summary["Total"] = (gf + gfi + cf + cfi) - (ga + ca)
 
-        sort_col = (
-            "Goal For" if "Goal For" in player_summary.columns else player_summary.columns[1]
-        )
         player_summary = player_summary.sort_values(
-            by=sort_col, ascending=False
+            by="Total", ascending=False
         ).reset_index(drop=True)
+
+        # 🏆 UUSI VISUAALINEN TOP-LISTA (PAALUPALKIT)
+        st.markdown("### 🏆 Top Players by Total Score")
+        top_players = player_summary.head(10).copy()
+        top_players["Player_Label"] = "#" + top_players["Number"]
+
+        fig_top = px.bar(
+            top_players,
+            x="Total",
+            y="Player_Label",
+            orientation="h",
+            text="Total",
+            color="Total",
+            color_continuous_scale="Viridis",
+            title="Top 10 Players Impact (Total Score)",
+        )
+        fig_top.update_layout(
+            yaxis=dict(autorange="reversed"),  # Parhaan näyttäminen ylimpänä
+            xaxis_title="Total Score Net Balance",
+            yaxis_title="Player Number",
+            showlegend=False,
+        )
+        fig_top.update_traces(textposition="outside")
+        st.plotly_chart(fig_top, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Player Statistics Table")
 
         column_config = {
             col: st.column_config.NumberColumn(col, width="small")
@@ -419,7 +443,6 @@ with tab3:
             if "against" in m.lower() or "ag" in m.lower()
         ]
 
-        # Ryhmitellään erille Descriptor (Period 1, 2, 3, OT) ja muille Category
         chart_source["Visual_Group"] = chart_source.apply(
             lambda r: r["Descriptor"] if r["Category"] == "Period" else r["Category"],
             axis=1,
@@ -471,7 +494,7 @@ with tab4:
     if not filtered_team.empty:
         col_vis1, col_vis2 = st.columns(2)
 
-        # 1. NETTOTASE (NET BALANCE)
+        # 1. NETTOTASE
         with col_vis1:
             st.markdown("### Net Scoring Chances by Category")
             net_df = (
@@ -494,7 +517,7 @@ with tab4:
             fig_net.update_traces(texttemplate="%{y}", textposition="outside")
             st.plotly_chart(fig_net, use_container_width=True)
 
-        # 2. JAKAUMA (DONUT CHART)
+        # 2. JAKAUMA
         with col_vis2:
             st.markdown("### Chance Creation Share by Category")
             for_df = (
@@ -513,7 +536,7 @@ with tab4:
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
-        # 3. PELEITTÄINEN TRENDI (LINE CHART)
+        # 3. TRENDI
         st.markdown("---")
         st.markdown("### Game-by-Game Scoring Chances Trend")
         trend_df = (
