@@ -45,13 +45,32 @@ def load_data():
 
 players_df, team_df = load_data()
 
+# Pelaajien nimikartta numeroiden perusteella
+player_names = {
+    6: "Jenni Hiirikoski",
+    8: "Hedvig Sturk",
+    9: "Nella Berg",
+    13: "Jenna Donohue",
+    14: "Wilma Sjolund",
+    15: "Emilie Kruse Johansen",
+    18: "Edith Larsson Ornkloo",
+    21: "Astrid Lindeberg",
+    23: "Madison Chantler",
+    25: "Fanny Aneborn",
+    27: "Jaycee Magwood",
+    39: "Inez Nygren",
+    42: "Mei Miura",
+    71: "Ebba Hedqvist",
+    72: "Aoi Shiga",
+    81: "Franziska Stocker",
+}
+
 
 # LUOKITTELU & STANDARDOINTI
 def classify_descriptor(desc):
     d = str(desc).strip()
     d_lower = d.lower()
 
-    # Erät (Period) -> Nimetään muotoon Period 1, Period 2, Period 3, OT
     if d_lower in ["period 1", "period 1."]:
         return "Period", "Period 1"
     if d_lower in ["period 2", "period 2."]:
@@ -61,7 +80,6 @@ def classify_descriptor(desc):
     if d_lower in ["ot", "period ot"]:
         return "Period", "OT"
 
-    # Hyökkäysalue (OZ)
     oz_list = [
         "oz tip",
         "oz rr pass",
@@ -76,22 +94,18 @@ def classify_descriptor(desc):
     if d_lower in oz_list:
         return "OZ", d
 
-    # Suoraluisteluhyökkäykset (Rush)
     rush_list = ["rush+rb", "rush br", "rush+", "rush-", "rush"]
     if d_lower in rush_list:
         return "Rush", d
 
-    # Ylivoima (PP)
     pp_list = ["pp setup", "pp faceoff", "pp rush", "pp takeaway", "pp reb"]
     if d_lower in pp_list:
         return "PP", d
 
-    # Riistot (Takeaways)
     ta_list = ["ta dz", "ta nz", "ta oz"]
     if d_lower in ta_list:
         return "Takeaways", d.upper()
 
-    # Käännöt/Kiekonmenetykset (Turnovers) - Standardoidut nimet
     if d_lower in ["turnover dz", "t over dz"]:
         return "Turnovers", "Turnover DZ"
     if d_lower in ["turnover nz", "t over nz"]:
@@ -99,16 +113,13 @@ def classify_descriptor(desc):
     if d_lower in ["turnover oz", "t over oz"]:
         return "Turnovers", "Turnover OZ"
 
-    # Muut (Others) - Ainoastaan nämä kolme!
     other_list = ["empty net", "pk", "faceoff"]
     if d_lower in other_list:
         return "Others", d.title()
 
-    # Tuntemattomat
     return "Uncategorized", d
 
 
-# Sovelletaan luokittelu ja nimen standardointi
 res = team_df["Descriptor"].apply(classify_descriptor)
 team_df["Category"] = [r[0] for r in res]
 team_df["Descriptor"] = [r[1] for r in res]
@@ -271,7 +282,6 @@ chances_net = total_cf - total_ca
 
 total_net = goals_net + chances_net
 
-# KPI-asettelu
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Goals For / Against", f"{total_gf} / {total_ga}", f"{goals_net:+d}")
 col2.metric("Chances For / Against", f"{total_cf} / {total_ca}", f"{chances_net:+d}")
@@ -382,14 +392,25 @@ with tab2:
 
         player_summary["Total"] = (gf + gfi + cf + cfi) - (ga + ca)
 
+        player_summary["Num_Int"] = pd.to_numeric(
+            player_summary["Number"], errors="coerce"
+        )
+        player_summary["Name"] = (
+            player_summary["Num_Int"].map(player_names).fillna("Tuntematon")
+        )
+
         player_summary = player_summary.sort_values(
             by="Total", ascending=False
         ).reset_index(drop=True)
 
-        # 🏆 KORJATTU VISUAALINEN TOP-LISTA (KATEGORINEN Y-AKSELI)
         st.markdown("### 🏆 Top Players by Total Score")
         top_players = player_summary.head(10).copy()
-        top_players["Player_Label"] = top_players["Number"].astype(str).apply(lambda x: f"#{x}")
+        top_players["Player_Label"] = (
+            "#"
+            + top_players["Number"].astype(str)
+            + " "
+            + top_players["Name"]
+        )
 
         fig_top = px.bar(
             top_players,
@@ -402,10 +423,7 @@ with tab2:
             title="Top 10 Players Impact (Total Score)",
         )
         fig_top.update_layout(
-            yaxis=dict(
-                type='category',
-                autorange="reversed"
-            ),
+            yaxis=dict(type="category", autorange="reversed"),
             xaxis_title="Total Score Net Balance",
             yaxis_title="Player",
             showlegend=False,
@@ -417,14 +435,28 @@ with tab2:
         st.markdown("---")
         st.markdown("### Player Statistics Table")
 
+        cols = ["Number", "Name"] + [
+            c
+            for c in player_summary.columns
+            if c
+            not in [
+                "Number",
+                "Name",
+                "Num_Int",
+                "Total",
+            ]
+        ] + ["Total"]
+        player_summary_table = player_summary[cols]
+
         column_config = {
             col: st.column_config.NumberColumn(col, width="small")
-            for col in player_summary.columns
+            for col in player_summary_table.columns
         }
         column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+        column_config["Name"] = st.column_config.TextColumn("Name", width="medium")
 
         st.dataframe(
-            player_summary,
+            player_summary_table,
             use_container_width=False,
             column_config=column_config,
             hide_index=True,
@@ -498,7 +530,6 @@ with tab4:
     if not filtered_team.empty:
         col_vis1, col_vis2 = st.columns(2)
 
-        # 1. NETTOTASE
         with col_vis1:
             st.markdown("### Net Scoring Chances by Category")
             net_df = (
@@ -521,7 +552,6 @@ with tab4:
             fig_net.update_traces(texttemplate="%{y}", textposition="outside")
             st.plotly_chart(fig_net, use_container_width=True)
 
-        # 2. JAKAUMA
         with col_vis2:
             st.markdown("### Chance Creation Share by Category")
             for_df = (
@@ -540,7 +570,6 @@ with tab4:
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
-        # 3. TRENDI
         st.markdown("---")
         st.markdown("### Game-by-Game Scoring Chances Trend")
         trend_df = (
