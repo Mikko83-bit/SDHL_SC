@@ -51,10 +51,11 @@ def classify_descriptor(desc):
     d = str(desc).strip()
     d_lower = d.lower()
 
-    # Erät
-    if d_lower in ["period 1", "period 2", "period 3", "ot"]:
-        cat = d.title() if d_lower != "ot" else "OT"
-        return cat, d.title() if d_lower != "ot" else "OT"
+    # Erät (Period) - OT ja Period OT yhdistetään nimelle 'Period OT'
+    if d_lower in ["period 1", "period 2", "period 3"]:
+        return "Period", d.title()
+    if d_lower in ["ot", "period ot"]:
+        return "Period", "Period OT"
 
     # Hyökkäysalue (OZ)
     oz_list = [
@@ -62,9 +63,11 @@ def classify_descriptor(desc):
         "oz rr pass",
         "oz shot+screen",
         "oz 1 area",
+        "oz 2 area",
         "oz crash the net",
         "oz reb",
         "oz bl+screen",
+        "oz blueline+screen",
     ]
     if d_lower in oz_list:
         return "OZ", d
@@ -84,7 +87,7 @@ def classify_descriptor(desc):
     if d_lower in ta_list:
         return "Takeaways", d.upper()
 
-    # Käännöt/Kiekonmenetykset (Turnovers) - Yhdistetään ja standardoidaan nimet
+    # Käännöt/Kiekonmenetykset (Turnovers) - Standardoidut nimet
     if d_lower in ["turnover dz", "t over dz"]:
         return "Turnovers", "Turnover DZ"
     if d_lower in ["turnover nz", "t over nz"]:
@@ -92,12 +95,12 @@ def classify_descriptor(desc):
     if d_lower in ["turnover oz", "t over oz"]:
         return "Turnovers", "Turnover OZ"
 
-    # Muut (Others) - Ainostaan nämä kolme!
+    # Muut (Others) - Ainoastaan nämä kolme!
     other_list = ["empty net", "pk", "faceoff"]
     if d_lower in other_list:
         return "Others", d.title()
 
-    # Jos tulee jokin tuntematon deskriptori, ei yhdistetä 'Others'-luokkaan
+    # Tuntemattomat
     return "Uncategorized", d
 
 
@@ -182,10 +185,7 @@ default_cats = [
         "Rush",
         "PP",
         "Others",
-        "Period 1",
-        "Period 2",
-        "Period 3",
-        "OT",
+        "Period",
     ]
     if c in all_categories
 ]
@@ -236,8 +236,8 @@ if "Category" in filtered_team.columns and selected_categories:
     ]
 
 kpi_source = (
-    filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])]
-    if not filtered_team[filtered_team["Category"].isin(["Period 1", "Period 2", "Period 3", "OT"])].empty
+    filtered_team[filtered_team["Category"] == "Period"]
+    if not filtered_team[filtered_team["Category"] == "Period"].empty
     else filtered_team
 )
 
