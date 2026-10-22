@@ -281,8 +281,14 @@ col5.metric("Total (Net)", total_net)
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📊 Scoring Chances Team", "👤 Scoring Chances Players", "📈 Visuals", "📄 Raw Data"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "📊 Scoring Chances Team",
+        "👤 Scoring Chances Players",
+        "📈 Visuals",
+        "📊 Advanced Visuals",
+        "📄 Raw Data",
+    ]
 )
 
 with tab1:
@@ -413,7 +419,7 @@ with tab3:
             if "against" in m.lower() or "ag" in m.lower()
         ]
 
-        # Luodaan visualisointia varten kenttä: Erille näytetään 'Descriptor' (Period 1, 2, 3, OT) ja muille 'Category'
+        # Ryhmitellään erille Descriptor (Period 1, 2, 3, OT) ja muille Category
         chart_source["Visual_Group"] = chart_source.apply(
             lambda r: r["Descriptor"] if r["Category"] == "Period" else r["Category"],
             axis=1,
@@ -461,6 +467,78 @@ with tab3:
         st.warning("Valitse vähintään yksi metriikka sivupalkista kaavion näyttämiseksi.")
 
 with tab4:
+    st.subheader("Advanced Performance Analytics")
+    if not filtered_team.empty:
+        col_vis1, col_vis2 = st.columns(2)
+
+        # 1. NETTOTASE (NET BALANCE)
+        with col_vis1:
+            st.markdown("### Net Scoring Chances by Category")
+            net_df = (
+                filtered_team.groupby("Category")
+                .apply(
+                    lambda g: (g["Goal For"].sum() + g["Chance For"].sum())
+                    - (g["Goal Against"].sum() + g["Chance Against"].sum())
+                )
+                .reset_index(name="Net Difference")
+            )
+
+            fig_net = px.bar(
+                net_df,
+                x="Category",
+                y="Net Difference",
+                color="Net Difference",
+                color_continuous_scale=["#d62728", "#e0e0e0", "#2ca02c"],
+                title="Net Difference (For - Against)",
+            )
+            fig_net.update_traces(texttemplate="%{y}", textposition="outside")
+            st.plotly_chart(fig_net, use_container_width=True)
+
+        # 2. JAKAUMA (DONUT CHART)
+        with col_vis2:
+            st.markdown("### Chance Creation Share by Category")
+            for_df = (
+                filtered_team[filtered_team["Category"] != "Period"]
+                .groupby("Category")[["Chance For", "Goal For"]]
+                .sum()
+                .sum(axis=1)
+                .reset_index(name="Total For")
+            )
+            fig_pie = px.pie(
+                for_df,
+                names="Category",
+                values="Total For",
+                hole=0.4,
+                title="Where Do Scoring Chances Come From?",
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        # 3. PELEITTÄINEN TRENDI (LINE CHART)
+        st.markdown("---")
+        st.markdown("### Game-by-Game Scoring Chances Trend")
+        trend_df = (
+            filtered_team[filtered_team["Category"] == "Period"]
+            .groupby("Game")[["Goal For", "Chance For", "Goal Against", "Chance Against"]]
+            .sum()
+            .reset_index()
+        )
+        trend_df["Total For"] = trend_df["Goal For"] + trend_df["Chance For"]
+        trend_df["Total Against"] = trend_df["Goal Against"] + trend_df["Chance Against"]
+
+        fig_trend = px.line(
+            trend_df,
+            x="Game",
+            y=["Total For", "Total Against"],
+            markers=True,
+            color_discrete_map={"Total For": "#1f77b4", "Total Against": "#d62728"},
+            labels={"value": "Total Count", "variable": "Type"},
+            title="Performance Across Selected Games",
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("No data available for advanced analytics.")
+
+with tab5:
     st.subheader("Raw Data Sheets")
     st.markdown("### Players Sheet")
     st.dataframe(filtered_players, use_container_width=True)
