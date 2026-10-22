@@ -45,7 +45,7 @@ def load_data():
 
 players_df, team_df = load_data()
 
-# Pelaajien nimikartta numeroiden perusteella
+# Pelaajien nimikartta numeroiden perusteella (lisätty #44 Ebba Hörnqvist)
 player_names = {
     6: "Jenni Hiirikoski",
     8: "Hedvig Sturk",
@@ -60,6 +60,7 @@ player_names = {
     27: "Jaycee Magwood",
     39: "Inez Nygren",
     42: "Mei Miura",
+    44: "Ebba Hörnqvist",
     71: "Ebba Hedqvist",
     72: "Aoi Shiga",
     81: "Franziska Stocker",
@@ -395,72 +396,78 @@ with tab2:
         player_summary["Num_Int"] = pd.to_numeric(
             player_summary["Number"], errors="coerce"
         )
-        player_summary["Name"] = (
-            player_summary["Num_Int"].map(player_names).fillna("Tuntematon")
-        )
+        
+        # Haetaan nimi sanakirjasta
+        player_summary["Name"] = player_summary["Num_Int"].map(player_names)
+
+        # 🛑 SUODATETAAN POIS NE NUMEROT, JOILLA EI OLE NIMEÄ
+        player_summary = player_summary.dropna(subset=["Name"])
 
         player_summary = player_summary.sort_values(
             by="Total", ascending=False
         ).reset_index(drop=True)
 
-        st.markdown("### 🏆 Top Players by Total Score")
-        top_players = player_summary.head(10).copy()
-        top_players["Player_Label"] = (
-            "#"
-            + top_players["Number"].astype(str)
-            + " "
-            + top_players["Name"]
-        )
+        if not player_summary.empty:
+            st.markdown("### 🏆 Top Players by Total Score")
+            top_players = player_summary.head(10).copy()
+            top_players["Player_Label"] = (
+                "#"
+                + top_players["Number"].astype(str)
+                + " "
+                + top_players["Name"]
+            )
 
-        fig_top = px.bar(
-            top_players,
-            x="Total",
-            y="Player_Label",
-            orientation="h",
-            text="Total",
-            color="Total",
-            color_continuous_scale="Viridis",
-            title="Top 10 Players Impact (Total Score)",
-        )
-        fig_top.update_layout(
-            yaxis=dict(type="category", autorange="reversed"),
-            xaxis_title="Total Score Net Balance",
-            yaxis_title="Player",
-            showlegend=False,
-            height=400,
-        )
-        fig_top.update_traces(textposition="outside")
-        st.plotly_chart(fig_top, use_container_width=True)
+            fig_top = px.bar(
+                top_players,
+                x="Total",
+                y="Player_Label",
+                orientation="h",
+                text="Total",
+                color="Total",
+                color_continuous_scale="Viridis",
+                title="Top 10 Players Impact (Total Score)",
+            )
+            fig_top.update_layout(
+                yaxis=dict(type="category", autorange="reversed"),
+                xaxis_title="Total Score Net Balance",
+                yaxis_title="Player",
+                showlegend=False,
+                height=400,
+            )
+            fig_top.update_traces(textposition="outside")
+            st.plotly_chart(fig_top, use_container_width=True)
 
-        st.markdown("---")
-        st.markdown("### Player Statistics Table")
+            st.markdown("---")
+            st.markdown("### Player Statistics Table")
 
-        cols = ["Number", "Name"] + [
-            c
-            for c in player_summary.columns
-            if c
-            not in [
-                "Number",
-                "Name",
-                "Num_Int",
-                "Total",
-            ]
-        ] + ["Total"]
-        player_summary_table = player_summary[cols]
+            cols = ["Number", "Name"] + [
+                c
+                for c in player_summary.columns
+                if c
+                not in [
+                    "Number",
+                    "Name",
+                    "Num_Int",
+                    "Total",
+                ]
+            ] + ["Total"]
+            player_summary_table = player_summary[cols]
 
-        column_config = {
-            col: st.column_config.NumberColumn(col, width="small")
-            for col in player_summary_table.columns
-        }
-        column_config["Number"] = st.column_config.TextColumn("Number", width="small")
-        column_config["Name"] = st.column_config.TextColumn("Name", width="medium")
+            column_config = {
+                col: st.column_config.NumberColumn(col, width="small")
+                for col in player_summary_table.columns
+            }
+            column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+            column_config["Name"] = st.column_config.TextColumn("Name", width="medium")
 
-        st.dataframe(
-            player_summary_table,
-            use_container_width=False,
-            column_config=column_config,
-            hide_index=True,
-        )
+            st.dataframe(
+                player_summary_table,
+                use_container_width=False,
+                column_config=column_config,
+                hide_index=True,
+            )
+        else:
+            st.info("No named players found for the selected filters.")
     else:
         st.info("No player data available for selected filters.")
 
