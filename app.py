@@ -279,4 +279,295 @@ col3.metric("Goals Total (GF)", total_gf)
 col4.metric("Chances Total (CF)", total_cf)
 col5.metric("Total (Net)", total_net)
 
-st.markdown("
+st.markdown("---")
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "📊 Scoring Chances Team",
+        "👤 Scoring Chances Players",
+        "📈 Visuals",
+        "📊 Advanced Visuals",
+        "📄 Raw Data",
+    ]
+)
+
+with tab1:
+    st.subheader("Team Statistics by Category & Descriptor")
+    if not filtered_team.empty:
+        base_cols = ["Category", "Descriptor"]
+        desired_order = [
+            "Goal For",
+            "Chance For",
+            "PP goal",
+            "PP chance",
+            "Goal Against",
+            "Chance Against",
+            "PP goal ag",
+            "PP chance ag",
+        ]
+        available_selected = [
+            c
+            for c in desired_order
+            if c in selected_team_metrics and c in filtered_team.columns
+        ]
+        num_cols = filtered_team.select_dtypes(include=["number"]).columns.tolist()
+        num_cols = [c for c in num_cols if c != "Game"]
+
+        team_summary = filtered_team.groupby(base_cols)[num_cols].sum().reset_index()
+        cols_to_show = base_cols + available_selected
+        extra_cols = [
+            c for c in team_summary.columns if c not in cols_to_show and c not in base_cols
+        ]
+        team_summary = team_summary[base_cols + available_selected + extra_cols]
+
+        team_config = {
+            "Category": st.column_config.TextColumn("Category", width="small"),
+            "Descriptor": st.column_config.TextColumn("Descriptor", width="medium"),
+        }
+        for col in team_summary.columns:
+            if col not in team_config:
+                team_config[col] = st.column_config.NumberColumn(col, width="small")
+
+        st.dataframe(
+            team_summary,
+            use_container_width=False,
+            column_config=team_config,
+            hide_index=True,
+        )
+    else:
+        st.info("No team data available for selected filters.")
+
+with tab2:
+    st.subheader("Player Statistics with Total Score")
+    if not filtered_players.empty:
+        p_num_cols = [
+            c
+            for c in filtered_players.select_dtypes(include=["number"]).columns.tolist()
+            if c not in ["Game", "Game "]
+        ]
+        player_summary = (
+            filtered_players.groupby("Number")[p_num_cols].sum().reset_index()
+        )
+
+        gf = (
+            player_summary["Goal For"]
+            if "Goal For" in player_summary.columns
+            else 0
+        )
+        gfi = (
+            player_summary["Goal For inv"]
+            if "Goal For inv" in player_summary.columns
+            else 0
+        )
+        cf = (
+            player_summary["Chance For"]
+            if "Chance For" in player_summary.columns
+            else 0
+        )
+        cfi = (
+            player_summary["Chance For inv"]
+            if "Chance For inv" in player_summary.columns
+            else 0
+        )
+        ga = (
+            player_summary["Goal Against"]
+            if "Goal Against" in player_summary.columns
+            else 0
+        )
+        ca = (
+            player_summary["Chance Against"]
+            if "Chance Against" in player_summary.columns
+            else 0
+        )
+
+        player_summary["Total"] = (gf + gfi + cf + cfi) - (ga + ca)
+
+        player_summary = player_summary.sort_values(
+            by="Total", ascending=False
+        ).reset_index(drop=True)
+
+        # 🏆 KORJATTU VISUAALINEN TOP-LISTA (KATEGORINEN Y-AKSELI)
+        st.markdown("### 🏆 Top Players by Total Score")
+        top_players = player_summary.head(10).copy()
+        top_players["Player_Label"] = top_players["Number"].astype(str).apply(lambda x: f"#{x}")
+
+        fig_top = px.bar(
+            top_players,
+            x="Total",
+            y="Player_Label",
+            orientation="h",
+            text="Total",
+            color="Total",
+            color_continuous_scale="Viridis",
+            title="Top 10 Players Impact (Total Score)",
+        )
+        fig_top.update_layout(
+            yaxis=dict(
+                type='category',
+                autorange="reversed"
+            ),
+            xaxis_title="Total Score Net Balance",
+            yaxis_title="Player",
+            showlegend=False,
+            height=400,
+        )
+        fig_top.update_traces(textposition="outside")
+        st.plotly_chart(fig_top, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Player Statistics Table")
+
+        column_config = {
+            col: st.column_config.NumberColumn(col, width="small")
+            for col in player_summary.columns
+        }
+        column_config["Number"] = st.column_config.TextColumn("Number", width="small")
+
+        st.dataframe(
+            player_summary,
+            use_container_width=False,
+            column_config=column_config,
+            hide_index=True,
+        )
+    else:
+        st.info("No player data available for selected filters.")
+
+with tab3:
+    st.subheader("Category & Period Performance Overview")
+    chart_source = filtered_team.copy()
+    if not chart_source.empty and selected_team_metrics:
+        for_metrics = [
+            m
+            for m in selected_team_metrics
+            if "against" not in m.lower() and "ag" not in m.lower()
+        ]
+        ag_metrics = [
+            m
+            for m in selected_team_metrics
+            if "against" in m.lower() or "ag" in m.lower()
+        ]
+
+        chart_source["Visual_Group"] = chart_source.apply(
+            lambda r: r["Descriptor"] if r["Category"] == "Period" else r["Category"],
+            axis=1,
+        )
+
+        chart_data = (
+            chart_source.groupby("Visual_Group")[selected_team_metrics]
+            .sum()
+            .reset_index()
+        )
+        chart_data["For Total"] = (
+            chart_data[for_metrics].sum(axis=1) if for_metrics else 0
+        )
+        chart_data["Against Total"] = (
+            chart_data[ag_metrics].sum(axis=1) if ag_metrics else 0
+        )
+
+        plot_df = pd.melt(
+            chart_data,
+            id_vars=["Visual_Group"],
+            value_vars=["For Total", "Against Total"],
+            var_name="Type",
+            value_name="Count",
+        )
+
+        fig = px.bar(
+            plot_df,
+            x="Visual_Group",
+            y="Count",
+            color="Type",
+            barmode="group",
+            color_discrete_map={"For Total": "#1f77b4", "Against Total": "#d62728"},
+        )
+
+        fig.update_traces(texttemplate="%{y}", textposition="outside")
+        fig.update_layout(
+            xaxis_title="Category / Period",
+            yaxis_title="Total Count",
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Valitse vähintään yksi metriikka sivupalkista kaavion näyttämiseksi.")
+
+with tab4:
+    st.subheader("Advanced Performance Analytics")
+    if not filtered_team.empty:
+        col_vis1, col_vis2 = st.columns(2)
+
+        # 1. NETTOTASE
+        with col_vis1:
+            st.markdown("### Net Scoring Chances by Category")
+            net_df = (
+                filtered_team.groupby("Category")
+                .apply(
+                    lambda g: (g["Goal For"].sum() + g["Chance For"].sum())
+                    - (g["Goal Against"].sum() + g["Chance Against"].sum())
+                )
+                .reset_index(name="Net Difference")
+            )
+
+            fig_net = px.bar(
+                net_df,
+                x="Category",
+                y="Net Difference",
+                color="Net Difference",
+                color_continuous_scale=["#d62728", "#e0e0e0", "#2ca02c"],
+                title="Net Difference (For - Against)",
+            )
+            fig_net.update_traces(texttemplate="%{y}", textposition="outside")
+            st.plotly_chart(fig_net, use_container_width=True)
+
+        # 2. JAKAUMA
+        with col_vis2:
+            st.markdown("### Chance Creation Share by Category")
+            for_df = (
+                filtered_team[filtered_team["Category"] != "Period"]
+                .groupby("Category")[["Chance For", "Goal For"]]
+                .sum()
+                .sum(axis=1)
+                .reset_index(name="Total For")
+            )
+            fig_pie = px.pie(
+                for_df,
+                names="Category",
+                values="Total For",
+                hole=0.4,
+                title="Where Do Scoring Chances Come From?",
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        # 3. TRENDI
+        st.markdown("---")
+        st.markdown("### Game-by-Game Scoring Chances Trend")
+        trend_df = (
+            filtered_team[filtered_team["Category"] == "Period"]
+            .groupby("Game")[["Goal For", "Chance For", "Goal Against", "Chance Against"]]
+            .sum()
+            .reset_index()
+        )
+        trend_df["Total For"] = trend_df["Goal For"] + trend_df["Chance For"]
+        trend_df["Total Against"] = trend_df["Goal Against"] + trend_df["Chance Against"]
+
+        fig_trend = px.line(
+            trend_df,
+            x="Game",
+            y=["Total For", "Total Against"],
+            markers=True,
+            color_discrete_map={"Total For": "#1f77b4", "Total Against": "#d62728"},
+            labels={"value": "Total Count", "variable": "Type"},
+            title="Performance Across Selected Games",
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("No data available for advanced analytics.")
+
+with tab5:
+    st.subheader("Raw Data Sheets")
+    st.markdown("### Players Sheet")
+    st.dataframe(filtered_players, use_container_width=True)
+    st.markdown("### Team Sheet")
+    st.dataframe(filtered_team, use_container_width=True)
