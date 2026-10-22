@@ -51,11 +51,15 @@ def classify_descriptor(desc):
     d = str(desc).strip()
     d_lower = d.lower()
 
-    # Erät (Period) - OT ja Period OT yhdistetään nimelle 'Period OT'
-    if d_lower in ["period 1", "period 2", "period 3"]:
-        return "Period", d.title()
+    # Erät (Period) -> Nimetään muotoon Period 1, Period 2, Period 3, OT
+    if d_lower in ["period 1", "period 1."]:
+        return "Period", "Period 1"
+    if d_lower in ["period 2", "period 2."]:
+        return "Period", "Period 2"
+    if d_lower in ["period 3", "period 3.", "3"]:
+        return "Period", "Period 3"
     if d_lower in ["ot", "period ot"]:
-        return "Period", "Period OT"
+        return "Period", "OT"
 
     # Hyökkäysalue (OZ)
     oz_list = [
@@ -395,7 +399,7 @@ with tab2:
         st.info("No player data available for selected filters.")
 
 with tab3:
-    st.subheader("Category Performance Overview (Based on Selected Metrics)")
+    st.subheader("Category & Period Performance Overview")
     chart_source = filtered_team.copy()
     if not chart_source.empty and selected_team_metrics:
         for_metrics = [
@@ -409,8 +413,16 @@ with tab3:
             if "against" in m.lower() or "ag" in m.lower()
         ]
 
+        # Luodaan visualisointia varten kenttä: Erille näytetään 'Descriptor' (Period 1, 2, 3, OT) ja muille 'Category'
+        chart_source["Visual_Group"] = chart_source.apply(
+            lambda r: r["Descriptor"] if r["Category"] == "Period" else r["Category"],
+            axis=1,
+        )
+
         chart_data = (
-            chart_source.groupby("Category")[selected_team_metrics].sum().reset_index()
+            chart_source.groupby("Visual_Group")[selected_team_metrics]
+            .sum()
+            .reset_index()
         )
         chart_data["For Total"] = (
             chart_data[for_metrics].sum(axis=1) if for_metrics else 0
@@ -421,7 +433,7 @@ with tab3:
 
         plot_df = pd.melt(
             chart_data,
-            id_vars=["Category"],
+            id_vars=["Visual_Group"],
             value_vars=["For Total", "Against Total"],
             var_name="Type",
             value_name="Count",
@@ -429,7 +441,7 @@ with tab3:
 
         fig = px.bar(
             plot_df,
-            x="Category",
+            x="Visual_Group",
             y="Count",
             color="Type",
             barmode="group",
@@ -438,7 +450,7 @@ with tab3:
 
         fig.update_traces(texttemplate="%{y}", textposition="outside")
         fig.update_layout(
-            xaxis_title="Category",
+            xaxis_title="Category / Period",
             yaxis_title="Total Count",
             uniformtext_minsize=8,
             uniformtext_mode="hide",
