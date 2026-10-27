@@ -73,7 +73,7 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    # Puhtaat, numeeriset arvot taustalle (muuttaa myös viivat ' - ' turvallisesti nolliksi)
+    # Puhtaat, numeeriset arvot taustalle
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     pts = get_col(df, col_points)
@@ -200,7 +200,6 @@ if df is not None:
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
-                # Käytetään puhtaita numeerisia sarakkeita virheiden välttämiseksi:
                 'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
                 'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
                 'Points': pd.NamedAgg(column='Points_clean', aggfunc='sum'),
@@ -288,13 +287,18 @@ if df is not None:
 
                 x_axis_col = 'Date' if 'Date' in player_df.columns else player_df.columns[0]
 
+                # Positiiviset ja negatiiviset väreittäin eriteltyinä
+                player_df['Performance'] = player_df['Game_Score'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
+
                 fig_bar = px.bar(
                     player_df, x=x_axis_col, y='Game_Score',
+                    color='Performance',
+                    color_discrete_map={'Positive': '#00b4d8', 'Negative': '#ef476f'},
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
                     labels={x_axis_col: 'Game Date / Index', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
-                fig_bar.update_traces(marker_color='#00b4d8')
+                fig_bar.update_layout(showlegend=False)
 
                 fig_bar.add_hline(
                     y=sdhl_ka, 
@@ -315,13 +319,14 @@ if df is not None:
                         annotation_font_color="#ffb703"
                     )
 
+                # Pelaajan keskiarvo kirkkaalla valkoisella, jotta erottuu varmasti
                 fig_bar.add_hline(
                     y=player_oma_ka, 
                     line_dash="solid", 
-                    line_color="#2ec4b6", 
+                    line_color="#ffffff", 
                     annotation_text=f"Player Average ({player_oma_ka:.2f})", 
                     annotation_position="bottom left",
-                    annotation_font_color="#2ec4b6"
+                    annotation_font_color="#ffffff"
                 )
 
                 fig_bar.update_layout(
