@@ -142,7 +142,8 @@ if df is not None:
         p_df = df_filtered[df_filtered[player_col] == player_name].copy()
         if not p_df.empty and 'Date' in p_df.columns:
             p_df['Temp_Date'] = pd.to_datetime(p_df['Date'], errors='coerce')
-            p_df = p_df.sort_values(by='Temp_Date')
+            p_df = p_df.dropna(subset=['Temp_Date']).sort_values(by='Temp_Date')
+            p_df['Date_Str'] = p_df['Temp_Date'].dt.strftime('%Y-%m-%d')
 
         if p_df.empty:
             st.warning("No data found for this player.")
@@ -165,14 +166,17 @@ if df is not None:
 
         st.markdown("### 📈 Season Trend Charts")
         
-        if 'Date' in p_df.columns:
-            fig_gs = px.line(p_df, x='Date', y='Game_Score', markers=True, title="Game Score Game History")
+        if 'Date_Str' in p_df.columns:
+            card_order = list(p_df['Date_Str'].unique())
+            fig_gs = px.line(p_df, x='Date_Str', y='Game_Score', markers=True, title="Game Score Game History")
             fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
+            fig_gs.update_xaxes(categoryorder='array', categoryarray=card_order)
             st.plotly_chart(fig_gs, use_container_width=True)
 
-        if col_toi and 'Date' in p_df.columns:
-            fig_toi = px.line(p_df, x='Date', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
+        if col_toi and 'Date_Str' in p_df.columns:
+            fig_toi = px.line(p_df, x='Date_Str', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
             fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
+            fig_toi.update_xaxes(categoryorder='array', categoryarray=card_order)
             st.plotly_chart(fig_toi, use_container_width=True)
 
     # --- NAVIGATION ---
@@ -261,14 +265,17 @@ if df is not None:
                 player_df = df_filtered[df_filtered[player_col] == selected_player].copy()
                 if not player_df.empty and 'Date' in player_df.columns:
                     player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], errors='coerce')
-                    player_df = player_df.sort_values(by='Temp_Date')
+                    player_df = player_df.dropna(subset=['Temp_Date']).sort_values(by='Temp_Date')
+                    player_df['Date_Str'] = player_df['Temp_Date'].dt.strftime('%Y-%m-%d')
 
-                if not player_df.empty and 'Date' in player_df.columns:
+                if not player_df.empty and 'Date_Str' in player_df.columns:
+                    prog_order = list(player_df['Date_Str'].unique())
                     fig = px.line(
-                        player_df, x='Date', y='Game_Score', markers=True,
+                        player_df, x='Date_Str', y='Game_Score', markers=True,
                         title=f"Player {selected_player} Game Score Game History"
                     )
                     fig.update_layout(xaxis_type='category')
+                    fig.update_xaxes(categoryorder='array', categoryarray=prog_order)
                     st.plotly_chart(fig, use_container_width=True)
 
     elif selected_tab == "📈 Game-by-Game Scores":
@@ -277,11 +284,12 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
-            # Pakotettu luotettava aikajärjestys Temp_Date-muunnoksella
+            # Varma ja tarkka lajittelu kalenterijärjestykseen
             player_df = df_filtered[df_filtered[player_col] == selected_player_bar].copy()
             if not player_df.empty and 'Date' in player_df.columns:
                 player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], errors='coerce')
-                player_df = player_df.sort_values(by='Temp_Date')
+                player_df = player_df.dropna(subset=['Temp_Date']).sort_values(by='Temp_Date')
+                player_df['Date_Str'] = player_df['Temp_Date'].dt.strftime('%Y-%m-%d')
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
@@ -296,20 +304,26 @@ if df is not None:
                     tiimi_ka = None
                     tiimi_nimi = "Team"
 
-                x_axis_col = 'Date' if 'Date' in player_df.columns else player_df.columns[0]
+                x_axis_col = 'Date_Str'
 
                 # Positiiviset ja negatiiviset väreittäin eriteltyinä
                 player_df['Performance'] = player_df['Game_Score'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
+
+                # Tarkka järjestyslista x-akselille Plotlyta varten
+                category_order = list(player_df[x_axis_col].unique())
 
                 fig_bar = px.bar(
                     player_df, x=x_axis_col, y='Game_Score',
                     color='Performance',
                     color_discrete_map={'Positive': '#00b4d8', 'Negative': '#ef476f'},
                     title=f"Player {selected_player_bar} Game-by-Game Game Score",
-                    labels={x_axis_col: 'Game Date / Index', 'Game_Score': 'Game Score'},
+                    labels={x_axis_col: 'Game Date', 'Game_Score': 'Game Score'},
                     text_auto='.2f'
                 )
                 fig_bar.update_layout(showlegend=False)
+
+                # Pakotetaan x-akselin järjestys tasan tarkkaan tuon listan mukaiseksi
+                fig_bar.update_xaxes(categoryorder='array', categoryarray=category_order)
 
                 fig_bar.add_hline(
                     y=sdhl_ka, 
@@ -343,7 +357,7 @@ if df is not None:
                 fig_bar.update_layout(
                     xaxis_type='category',
                     yaxis_title="Game Score",
-                    xaxis_title="Game Date / Index",
+                    xaxis_title="Game Date",
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
