@@ -16,14 +16,15 @@ def load_data(file_path):
         df = pd.read_excel(file_path)
         df.columns = [str(col).strip() for col in df.columns]
         if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+            # dayfirst=True varmistaa, että suomalainen pvm-muoto (9.9.2026) tulkitaan oikein
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
         return df
     except Exception as e:
         try:
             df = pd.read_excel(f"../{file_path}")
             df.columns = [str(col).strip() for col in df.columns]
             if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+                df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
             return df
         except Exception as e2:
             st.error(f"Error reading file: {e2}")
@@ -270,6 +271,7 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
+            # Järjestetään pelit aikajärjestykseen päivämäärän mukaan
             player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player_bar]
             
             if not player_df.empty:
@@ -287,7 +289,7 @@ if df is not None:
 
                 x_axis_col = 'Date' if 'Date' in player_df.columns else player_df.columns[0]
 
-                # Positiiviset ja negatiiviset väreittäin eriteltyinä
+                # Positiiviset ja negatiiviset eriteltyinä väreillä
                 player_df['Performance'] = player_df['Game_Score'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
 
                 fig_bar = px.bar(
@@ -319,7 +321,7 @@ if df is not None:
                         annotation_font_color="#ffb703"
                     )
 
-                # Pelaajan keskiarvo kirkkaalla valkoisella, jotta erottuu varmasti
+                # Pelaajan keskiarvo kirkkaalla valkoisella
                 fig_bar.add_hline(
                     y=player_oma_ka, 
                     line_dash="solid", 
