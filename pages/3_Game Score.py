@@ -32,10 +32,9 @@ def load_data(file_path):
 df = load_data(EXCEL_FILE)
 
 if df is not None:
-    # Helper functions (muunnettu käsittelemään myös Excelin viivat '-')
+    # Helper functions (käsittelee myös Excelin viivat '-')
     def get_col(data, col_name):
         if col_name and col_name in data.columns:
-            # Korvataan viivat '-' ja tyhjät nollilla ennen numeromuunnosta
             s = data[col_name].replace(['-', '—', ''], 0)
             return pd.to_numeric(s, errors='coerce').fillna(0)
         return pd.Series(0, index=data.index)
@@ -56,19 +55,20 @@ if df is not None:
             except:
                 return 0.0
 
-    # Sarakkeiden haku (varmistetaan ettei Penalties ja Penalties drawn sekoitu)
+    # Column mappings
     col_goals = next((c for c in df.columns if c.lower() in ['goals', 'goal']), None)
     col_assists = next((c for c in df.columns if c.lower() in ['assists', 'assist']), None)
     col_points = next((c for c in df.columns if c.lower() in ['points', 'point']), None)
     col_sog = next((c for c in df.columns if 'shots on goal' in c.lower() or c.lower() == 'sog'), None)
-    col_xg = next((c for c in df.columns if 'xg' in c.lower() and 'expected' in c.lower()), None)
+    
+    # Tarkka haku xG (Expected goals) -sarakkeelle
+    col_xg = next((c for c in df.columns if 'expected goals' in c.lower() or c.lower() == 'xg'), None)
+    
     col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
     col_blk = next((c for c in df.columns if 'blocked shots' in c.lower() or c.lower() == 'blocks'), None)
-    
-    # Hankitut jäähyt (Penalties drawn)
     col_pd = next((c for c in df.columns if 'penalties drawn' in c.lower()), None)
     
-    # Omat jäähyt (Penalties) - haetaan tarkasti niin, että 'drawn' ei sotke hakua
+    # Omat jäähyt (Penalties)
     col_pt = next((c for c in df.columns if c.lower() == 'penalties' or ('penalty' in c.lower() and 'drawn' not in c.lower() and 'time' not in c.lower())), None)
     if not col_pt:
         col_pt = next((c for c in df.columns if any(k in c.lower() for k in ['penalty time', 'pim', 'penalty minutes'])), None)
@@ -82,7 +82,7 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    # Puhtaat, numeeriset arvot taustalle
+    # Clean numeric values
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     pts = get_col(df, col_points)
@@ -119,7 +119,7 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score -laskenta
+    # Game Score calculation
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
