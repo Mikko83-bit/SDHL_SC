@@ -186,6 +186,7 @@ if df is not None:
             "🏆 Season Leaderboard", 
             "📊 Player Progression", 
             "📈 Game-by-Game Scores", 
+            "🎯 Efficiency & Finishing",
             "📁 Raw Data"
         ],
         horizontal=True,
@@ -284,7 +285,6 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
-            # Varma ja tarkka lajittelu kalenterijärjestykseen
             player_df = df_filtered[df_filtered[player_col] == selected_player_bar].copy()
             if not player_df.empty and 'Date' in player_df.columns:
                 player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], errors='coerce')
@@ -305,11 +305,7 @@ if df is not None:
                     tiimi_nimi = "Team"
 
                 x_axis_col = 'Date_Str'
-
-                # Positiiviset ja negatiiviset väreittäin eriteltyinä
                 player_df['Performance'] = player_df['Game_Score'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
-
-                # Tarkka järjestyslista x-akselille Plotlyta varten
                 category_order = list(player_df[x_axis_col].unique())
 
                 fig_bar = px.bar(
@@ -321,47 +317,16 @@ if df is not None:
                     text_auto='.2f'
                 )
                 fig_bar.update_layout(showlegend=False)
-
-                # Pakotetaan x-akselin järjestys tasan tarkkaan tuon listan mukaiseksi
                 fig_bar.update_xaxes(categoryorder='array', categoryarray=category_order)
 
-                fig_bar.add_hline(
-                    y=sdhl_ka, 
-                    line_dash="dash", 
-                    line_color="#adb5bd", 
-                    annotation_text=f"SDHL Average ({sdhl_ka:.2f})", 
-                    annotation_position="bottom right",
-                    annotation_font_color="#adb5bd"
-                )
+                fig_bar.add_hline(y=sdhl_ka, line_dash="dash", line_color="#adb5bd", annotation_text=f"SDHL Average ({sdhl_ka:.2f})", annotation_position="bottom right", annotation_font_color="#adb5bd")
 
                 if team_col and not pd.isna(tiimi_ka):
-                    fig_bar.add_hline(
-                        y=tiimi_ka, 
-                        line_dash="dot", 
-                        line_color="#ffb703", 
-                        annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})", 
-                        annotation_position="top right",
-                        annotation_font_color="#ffb703"
-                    )
+                    fig_bar.add_hline(y=tiimi_ka, line_dash="dot", line_color="#ffb703", annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})", annotation_position="top right", annotation_font_color="#ffb703")
 
-                # Pelaajan keskiarvo kirkkaalla valkoisella
-                fig_bar.add_hline(
-                    y=player_oma_ka, 
-                    line_dash="solid", 
-                    line_color="#ffffff", 
-                    annotation_text=f"Player Average ({player_oma_ka:.2f})", 
-                    annotation_position="bottom left",
-                    annotation_font_color="#ffffff"
-                )
+                fig_bar.add_hline(y=player_oma_ka, line_dash="solid", line_color="#ffffff", annotation_text=f"Player Average ({player_oma_ka:.2f})", annotation_position="bottom left", annotation_font_color="#ffffff")
 
-                fig_bar.update_layout(
-                    xaxis_type='category',
-                    yaxis_title="Game Score",
-                    xaxis_title="Game Date",
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)'
-                )
-
+                fig_bar.update_layout(xaxis_type='category', yaxis_title="Game Score", xaxis_title="Game Date", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
                 col1, col2, col3 = st.columns(3)
@@ -372,6 +337,58 @@ if df is not None:
                 with col3:
                     if team_col:
                         st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
+
+    elif selected_tab == "🎯 Efficiency & Finishing":
+        st.subheader("🎯 Player Finishing & Scoring Efficiency")
+        st.caption("Vertailu siitä, kuinka paljon pelaaja tekee maaleja suhteessa odotettuihin maaleihin (xG) ja laukauksiin.")
+
+        if player_col:
+            group_cols = [player_col]
+            if team_col in df_filtered.columns:
+                group_cols.append(team_col)
+            if col_pos:
+                group_cols.append('Pos_clean')
+
+            eff_agg = df_filtered.groupby(group_cols).agg(
+                Games=('Game_Score', 'count'),
+                Goals=('Goals_clean', 'sum'),
+                Total_xG=('Total_xG_clean', 'sum'),
+                Shots=('Shots_clean', 'sum'),
+                Avg_xG_Shot=('Avg_xG_Shot_clean', 'mean')
+            ).reset_index()
+
+            eff_rename = {player_col: 'Player'}
+            if team_col in df_filtered.columns:
+                eff_rename[team_col] = 'Team'
+            if col_pos:
+                eff_rename['Pos_clean'] = 'Position'
+            eff_agg = eff_agg.rename(columns=eff_rename)
+
+            # Lasketaan maalit miinus xG (ylisuoritus / alisuoritus) sekä laukaisutehokkuus
+            eff_agg['Goals - xG'] = (eff_agg['Goals'] - eff_agg['Total_xG']).round(2)
+            eff_agg['Total_xG'] = eff_agg['Total_xG'].round(2)
+            eff_agg['Shooting %'] = ((eff_agg['Goals'] / eff_agg['Shots'].replace(0, 1)) * 100).round(1)
+            eff_agg['Avg xG/Shot'] = eff_agg['Avg_xG_Shot'].round(3)
+
+            eff_agg = eff_agg.sort_values(by="Goals", ascending=False).reset_index(drop=True)
+
+            st.dataframe(
+                eff_agg[['Player', 'Team', 'Position', 'Games', 'Goals', 'Total_xG', 'Goals - xG', 'Shots', 'Shooting %', 'Avg xG/Shot']],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("### 📊 Maalit vs Odotetut Maalit (xG)")
+            top_scorers = eff_agg.head(15) # Näytetään top 15 maalitykkiä selkeyden vuoksi
+            
+            fig_eff = px.bar(
+                top_scorers, x='Player', y=['Goals', 'Total_xG'],
+                barmode='group',
+                title="Top 15 Scorers: Actual Goals vs Expected Goals (xG)",
+                labels={'value': 'Count', 'variable': 'Metric'}
+            )
+            fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_eff, use_container_width=True)
 
     elif selected_tab == "📁 Raw Data":
         st.subheader("Raw Data and Calculated Game Score Values")
