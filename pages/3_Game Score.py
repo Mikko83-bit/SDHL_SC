@@ -13,7 +13,7 @@ EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 @st.cache_data
 def load_data(file_path):
     try:
-        df = pd.read_excel(file_path) # Lukee oletuksena ensimmäisen välilehden
+        df = pd.read_excel(file_path)
         df.columns = [str(col).strip() for col in df.columns]
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
@@ -353,7 +353,7 @@ if df is not None:
 
     elif selected_tab == "🎯 Efficiency & Finishing":
         st.subheader("🎯 Player Finishing & Scoring Efficiency")
-        st.caption("Comparison of actual goals scored relative to expected goals (xG) and shots.")
+        st.caption("Comparison of actual goals scored relative to shots.")
 
         if player_col:
             group_cols = [player_col]
@@ -383,18 +383,33 @@ if df is not None:
                 hide_index=True
             )
 
+            st.markdown("### 📊 Top Scorers: Goals vs Shots")
+            top_eff = eff_agg.head(15)
+            if not top_eff.empty:
+                melted_eff = top_eff.melt(
+                    id_vars=['Player'],
+                    value_vars=['Goals', 'Shots'],
+                    var_name='Metric', value_name='Count'
+                )
+                fig_eff = px.bar(
+                    melted_eff, x='Player', y='Count', color='Metric',
+                    barmode='group',
+                    title="Top 15 Scorers: Goals and Shots Comparison",
+                    color_discrete_map={'Goals': '#00b4d8', 'Shots': '#48cae4'}
+                )
+                fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_eff, use_container_width=True)
+
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
-        st.caption("Detailed breakdown of faceoffs in Defense Zone (DZ), Neutral Zone (NZ), and Attack Zone (OZ) with overall win percentages.")
+        st.caption("Detailed breakdown of faceoffs in Defense Zone (DZ), Neutral Zone (NZ), and Attack Zone (OZ).")
 
         if df_faceoffs is not None:
             fo_df = df_faceoffs.copy()
             
-            # Tunnistetaan sarakkeet turvallisesti nimien perusteella
             fo_player_col = next((c for c in fo_df.columns if 'player' in c.lower()), 'Player')
             fo_team_col = next((c for c in fo_df.columns if 'team' in c.lower()), 'Team')
             
-            # Etsitään DZ, NZ, OZ sarakkeet
             col_dz_tot = next((c for c in fo_df.columns if 'dz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
             col_dz_won = next((c for c in fo_df.columns if 'dz' in c.lower() and 'won' in c.lower()), None)
             
@@ -404,7 +419,6 @@ if df is not None:
             col_oz_tot = next((c for c in fo_df.columns if 'oz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
             col_oz_won = next((c for c in fo_df.columns if 'oz' in c.lower() and 'won' in c.lower()), None)
 
-            # Puhdistetaan numerot
             dz_tot = get_col(fo_df, col_dz_tot) if col_dz_tot else pd.Series(0, index=fo_df.index)
             dz_won = get_col(fo_df, col_dz_won) if col_dz_won else pd.Series(0, index=fo_df.index)
             nz_tot = get_col(fo_df, col_nz_tot) if col_nz_tot else pd.Series(0, index=fo_df.index)
@@ -416,7 +430,6 @@ if df is not None:
             processed_fo['Player'] = fo_df[fo_player_col] if fo_player_col in fo_df.columns else "Unknown"
             processed_fo['Team'] = fo_df[fo_team_col] if fo_team_col in fo_df.columns else "Unknown"
             
-            # Aluekohtaiset
             processed_fo['DZ Tot'] = dz_tot
             processed_fo['DZ Won'] = dz_won
             processed_fo['DZ Win %'] = ((dz_won / dz_tot.replace(0, 1)) * 100).round(1)
@@ -429,15 +442,23 @@ if df is not None:
             processed_fo['OZ Won'] = oz_won
             processed_fo['OZ Win %'] = ((oz_won / oz_tot.replace(0, 1)) * 100).round(1)
 
-            # Kokonaisuus
             total_faceoffs = dz_tot + nz_tot + oz_tot
             total_wins = dz_won + nz_won + oz_won
             processed_fo['Total Faceoffs'] = total_faceoffs
             processed_fo['Total Wins'] = total_wins
             processed_fo['Total Win %'] = ((total_wins / total_faceoffs.replace(0, 1)) * 100).round(1)
 
-            # Suodatin minimialoituksille
-            min_fo_zone = st.slider("Min. total faceoffs for zone table:", 0, 100, 10, 1)
+            # Lisätään suodatin alueille (DZ, NZ, OZ)
+            col_f1, col_f2 = st.columns([2, 2])
+            with col_f1:
+                min_fo_zone = st.slider("Min. total faceoffs:", 0, 100, 10, 1, key='slider_fo_zone')
+            with col_f2:
+                selected_zones = st.multiselect(
+                    "Select zones to display in chart:",
+                    ['DZ Win %', 'NZ Win %', 'OZ Win %'],
+                    default=['DZ Win %', 'NZ Win %', 'OZ Win %']
+                )
+
             filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=True)
 
             st.dataframe(
@@ -446,18 +467,18 @@ if df is not None:
                 hide_index=True
             )
 
-            st.markdown("### 📊 Faceoff Win % by Zone (Top 15 Players)")
+            st.markdown("### 📊 Faceoff Win % by Selected Zones (Top 15 Players)")
             top_zone_fo = filtered_fo.head(15)
-            if not top_zone_fo.empty:
+            if not top_zone_fo.empty and selected_zones:
                 melted = top_zone_fo.melt(
                     id_vars=['Player'], 
-                    value_vars=['DZ Win %', 'NZ Win %', 'OZ Win %'],
+                    value_vars=selected_zones,
                     var_name='Zone', value_name='Win %'
                 )
                 fig_zone = px.bar(
                     melted, x='Player', y='Win %', color='Zone',
                     barmode='group',
-                    title="Faceoff Win Percentage by Zone (DZ, NZ, OZ)",
+                    title="Faceoff Win Percentage by Filtered Zones",
                     labels={'Win %': 'Win %'}
                 )
                 fig_zone.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
