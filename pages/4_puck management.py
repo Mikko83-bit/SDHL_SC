@@ -14,7 +14,6 @@ EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 @st.cache_data
 def load_puck_data(file_path):
     try:
-        # Ladataan suoraan samasta tiedostosta oikea välilehti
         df = pd.read_excel(file_path, sheet_name='Puck management')
         df.columns = [str(col).strip() for col in df.columns]
         return df
@@ -30,17 +29,16 @@ def load_puck_data(file_path):
 df_puck = load_puck_data(EXCEL_FILE)
 
 if df_puck is not None:
-    # Apufunktio numeroiden siivoamiseen (käsittelee viivat '-' nollina)
     def get_col(data, col_name):
         if col_name and col_name in data.columns:
             s = data[col_name].replace(['-', '—', ''], 0)
             return pd.to_numeric(s, errors='coerce').fillna(0)
         return pd.Series(0, index=data.index)
 
-    # Tunnistetaan sarakkeet turvallisesti
+    # Tunnistetaan sarakkeet turvallisesti oikeasta df_puck -taulukosta
     player_col = next((c for c in df_puck.columns if 'player' in c.lower()), 'Player')
     team_col = next((c for c in df_puck.columns if 'team' in c.lower()), 'Team')
-    pos_col = next((c for c in df.columns if 'position' in c.lower()), 'Position')
+    pos_col = next((c for c in df_puck.columns if 'position' in c.lower()), 'Position')
 
     # Siivotaan perustiedot
     df_puck['Player_clean'] = df_puck[player_col]
