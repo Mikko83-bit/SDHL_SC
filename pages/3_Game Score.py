@@ -97,6 +97,8 @@ if df is not None:
     df['Shots_clean'] = sog
     df['Total_xG_clean'] = xg_val
     df['Avg_xG_Shot_clean'] = xg_ps_val
+    df['FOW_clean'] = fow
+    df['FOL_clean'] = fol
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
@@ -187,6 +189,7 @@ if df is not None:
             "📊 Player Progression", 
             "📈 Game-by-Game Scores", 
             "🎯 Efficiency & Finishing",
+            "🏒 Faceoff Analytics",
             "📁 Raw Data"
         ],
         horizontal=True,
@@ -364,7 +367,6 @@ if df is not None:
                 eff_rename['Pos_clean'] = 'Position'
             eff_agg = eff_agg.rename(columns=eff_rename)
 
-            # Lasketaan maalit miinus xG (ylisuoritus / alisuoritus) sekä laukaisutehokkuus
             eff_agg['Goals - xG'] = (eff_agg['Goals'] - eff_agg['Total_xG']).round(2)
             eff_agg['Total_xG'] = eff_agg['Total_xG'].round(2)
             eff_agg['Shooting %'] = ((eff_agg['Goals'] / eff_agg['Shots'].replace(0, 1)) * 100).round(1)
@@ -379,7 +381,7 @@ if df is not None:
             )
 
             st.markdown("### 📊 Maalit vs Odotetut Maalit (xG)")
-            top_scorers = eff_agg.head(15) # Näytetään top 15 maalitykkiä selkeyden vuoksi
+            top_scorers = eff_agg.head(15)
             
             fig_eff = px.bar(
                 top_scorers, x='Player', y=['Goals', 'Total_xG'],
@@ -389,6 +391,55 @@ if df is not None:
             )
             fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_eff, use_container_width=True)
+
+    elif selected_tab == "🏒 Faceoff Analytics":
+        st.subheader("🏒 Faceoff Circle Analytics")
+        st.caption("Pelaajien aloitusvoitot, -tappiot ja aloitusprosentit.")
+
+        if player_col:
+            group_cols = [player_col]
+            if team_col in df_filtered.columns:
+                group_cols.append(team_col)
+            if col_pos:
+                group_cols.append('Pos_clean')
+
+            fo_agg = df_filtered.groupby(group_cols).agg(
+                Games=('Game_Score', 'count'),
+                FOW=('FOW_clean', 'sum'),
+                FOL=('FOL_clean', 'sum')
+            ).reset_index()
+
+            fo_rename = {player_col: 'Player'}
+            if team_col in df_filtered.columns:
+                fo_rename[team_col] = 'Team'
+            if col_pos:
+                fo_rename['Pos_clean'] = 'Position'
+            fo_agg = fo_agg.rename(columns=fo_rename)
+
+            fo_agg['Total Faceoffs'] = fo_agg['FOW'] + fo_agg['FOL']
+            fo_agg['FO Win %'] = ((fo_agg['FOW'] / fo_agg['Total Faceoffs'].replace(0, 1)) * 100).round(1)
+
+            min_fo_filter = st.slider("Min. aloitusten määrä yhteensä:", 0, 100, 10, 1)
+            fo_filtered = fo_agg[fo_agg['Total Faceoffs'] >= min_fo_filter].sort_values(by='FO Win %', ascending=False).reset_index(drop=True)
+
+            st.dataframe(
+                fo_filtered[['Player', 'Team', 'Position', 'Games', 'FOW', 'FOL', 'Total Faceoffs', 'FO Win %']],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("### 📊 Top Aloittajat (Aloitusprosentti %)")
+            top_fo = fo_filtered.head(15)
+            if not top_fo.empty:
+                fig_fo = px.bar(
+                    top_fo, x='Player', y='FO Win %',
+                    text='FO Win %',
+                    title="Top Faceoff Win % (Asetetulla aloitussuodattimella)",
+                    labels={'FO Win %': 'Aloitusprosentti (%)'}
+                )
+                fig_fo.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                fig_fo.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_fo, use_container_width=True)
 
     elif selected_tab == "📁 Raw Data":
         st.subheader("Raw Data and Calculated Game Score Values")
