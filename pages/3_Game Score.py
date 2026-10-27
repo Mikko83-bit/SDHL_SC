@@ -83,6 +83,11 @@ if df is not None:
     col_fol = next((c for c in df.columns if 'faceoffs lost' in c.lower() or c.lower() == 'fol'), None)
     col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
     col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
+    
+    # Etsitään myös henkilökohtainen xG-sarake, jos sellainen löytyy datasta (tai käytetään xG per shot * SOG -kaavaa tarvittaessa)
+    col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
+    col_xg_ps = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
+
     col_gf = next((c for c in df.columns if c.lower() in ['plus', 'gf']), None)
     col_ga = next((c for c in df.columns if c.lower() in ['minus', 'ga']), None)
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
@@ -101,6 +106,14 @@ if df is not None:
     gf = get_col(df, col_gf)
     ga = get_col(df, col_ga)
 
+    # Lasketaan henkilökohtainen xG (jos erillistä saraketta ei ole, lasketaan SOG * xG per shot)
+    if col_xg_indiv:
+        indiv_xg = get_col(df, col_xg_indiv)
+    elif col_xg_ps:
+        indiv_xg = sog * get_col(df, col_xg_ps)
+    else:
+        indiv_xg = pd.Series(0.0, index=df.index)
+
     df['Goals_clean'] = g
     df['Assists_clean'] = a_total
     df['Shots_clean'] = sog
@@ -109,6 +122,7 @@ if df is not None:
     df['Faceoffs_Total_clean'] = fow - fol
     df['xG_Total_clean'] = xg_for - xg_against
     df['Plus_Minus_clean'] = gf - ga
+    df['Indiv_xG_clean'] = indiv_xg
     
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
@@ -352,8 +366,8 @@ if df is not None:
                         st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
 
     elif selected_tab == "🎯 Efficiency & Finishing":
-        st.subheader("🎯 Player Finishing & Scoring Efficiency")
-        st.caption("Comparison of actual goals scored relative to shots.")
+        st.subheader("🎯 Player Finishing & Scoring Efficiency (Goals vs Expected Goals)")
+        st.caption("Comparison of actual goals scored relative to individual expected goals (xG).")
 
         if player_col:
             group_cols = [player_col]
@@ -365,8 +379,12 @@ if df is not None:
             eff_agg = df_filtered.groupby(group_cols).agg(
                 Games=('Game_Score', 'count'),
                 Goals=('Goals_clean', 'sum'),
+                Expected_Goals=('Indiv_xG_clean', 'sum'),
                 Shots=('Shots_clean', 'sum')
             ).reset_index()
+
+            eff_agg['Expected_Goals'] = eff_agg['Expected_Goals'].round(2)
+            eff_agg['Goals - xG'] = (eff_agg['Goals'] - eff_agg['Expected_Goals']).round(2)
 
             eff_rename = {player_col: 'Player'}
             if team_col in df_filtered.columns:
@@ -375,27 +393,27 @@ if df is not None:
                 eff_rename['Pos_clean'] = 'Position'
             eff_agg = eff_agg.rename(columns=eff_rename)
 
-            eff_agg = eff_agg.sort_values(by="Goals", ascending=False).reset_index(drop=True)
+            eff_agg = eff_agg.sort_values(by="Goals - xG", ascending=False).reset_index(drop=True)
 
             st.dataframe(
-                eff_agg[['Player', 'Team', 'Position', 'Games', 'Goals', 'Shots']],
+                eff_agg[['Player', 'Team', 'Position', 'Games', 'Goals', 'Expected_Goals', 'Goals - xG', 'Shots']],
                 use_container_width=True,
                 hide_index=True
             )
 
-            st.markdown("### 📊 Top Scorers: Goals vs Shots")
+            st.markdown("### 📊 Top Finishers: Goals vs Expected Goals (xG)")
             top_eff = eff_agg.head(15)
             if not top_eff.empty:
                 melted_eff = top_eff.melt(
                     id_vars=['Player'],
-                    value_vars=['Goals', 'Shots'],
+                    value_vars=['Goals', 'Expected_Goals'],
                     var_name='Metric', value_name='Count'
                 )
                 fig_eff = px.bar(
                     melted_eff, x='Player', y='Count', color='Metric',
                     barmode='group',
-                    title="Top 15 Scorers: Goals and Shots Comparison",
-                    color_discrete_map={'Goals': '#00b4d8', 'Shots': '#48cae4'}
+                    title="Top 15 Finishers: Goals vs Expected Goals Comparison",
+                    color_discrete_map={'Goals': '#00b4d8', 'Expected_Goals': '#f77f00'}
                 )
                 fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_eff, use_container_width=True)
@@ -448,7 +466,6 @@ if df is not None:
             processed_fo['Total Wins'] = total_wins
             processed_fo['Total Win %'] = ((total_wins / total_faceoffs.replace(0, 1)) * 100).round(1)
 
-            # Lisätään suodatin alueille (DZ, NZ, OZ)
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 min_fo_zone = st.slider("Min. total faceoffs:", 0, 100, 10, 1, key='slider_fo_zone')
