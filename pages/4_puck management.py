@@ -10,6 +10,33 @@ st.caption("Clean puck management, turnovers, zone entries, transition statistic
 
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
+# Helper function to normalize team names across different sheets
+def normalize_team_name(name):
+    if not isinstance(name, str):
+        return "Unknown"
+    cleaned = name.strip()
+    upper_name = cleaned.upper()
+    
+    # Map variations to standard names
+    if "LULEA" in upper_name:
+        return "Lulea/MSSK"
+    if "MODO" in upper_name:
+        return "MODO"
+    if "FROLUNDA" in upper_name or "FRÖLUNDA" in upper_name:
+        return "Frolunda"
+    if "BRYNAS" in upper_name or "BRYNÄS" in upper_name:
+        return "Brynas"
+    if "FARJESTAD" in upper_name or "FÄRJESTAD" in upper_name:
+        return "Farjestad"
+    if "DJURGARDEN" in upper_name or "DJURGÅRDEN" in upper_name:
+        return "Djurgarden"
+    if "LINKOPING" in upper_name or "LINKÖPING" in upper_name:
+        return "Linkoping"
+    if "SKELLEFTEA" in upper_name or "SKELLEFTEÅ" in upper_name:
+        return "Skelleftea"
+    
+    return cleaned
+
 @st.cache_data
 def load_excel_sheet(file_path, sheet_name):
     try:
@@ -26,7 +53,6 @@ def load_excel_sheet(file_path, sheet_name):
 
 df_puck = load_excel_sheet(EXCEL_FILE, 'Puck management')
 
-# Try loading raw game logs (usually default or first sheet) for xG calculations
 @st.cache_data
 def load_game_logs(file_path):
     try:
@@ -60,7 +86,7 @@ if df_puck is not None:
     pos_col = next((c for c in df_puck.columns if 'position' in c.lower()), 'Position')
 
     df_puck['Player_clean'] = df_puck[player_col] if player_col in df_puck.columns else 'Unknown'
-    df_puck['Team_clean'] = df_puck[team_col] if team_col in df_puck.columns else 'Unknown'
+    df_puck['Team_clean'] = df_puck[team_col].apply(normalize_team_name) if team_col in df_puck.columns else 'Unknown'
     df_puck['Pos_clean'] = df_puck[pos_col].astype(str).str.upper().str.strip() if pos_col in df_puck.columns else 'F'
 
     # --- SIDEBAR FILTERS ---
@@ -221,7 +247,7 @@ if df_puck is not None:
     # ---------------------------------------------------------
     with tab_xg:
         st.subheader("📊 Team Expected Goals (xG) & Finishing Analysis")
-        st.caption("Calculated team-level total Expected Goals (xG), actual goals scored, and finishing efficiency.")
+        st.caption("Calculated team-level total Expected Goals (xG), actual goals scored, and finishing efficiency for all teams.")
 
         if df_games is not None:
             g_team_col = next((c for c in df_games.columns if 'team' in c.lower()), None)
@@ -230,23 +256,21 @@ if df_puck is not None:
             g_shots_col = next((c for c in df_games.columns if 'shots on goal' in c.lower()), None)
 
             if g_team_col and g_xg_col:
-                # Ensure clean numbers
+                # Normalize team names in game logs as well
+                df_games['Team_clean_xg'] = df_games[g_team_col].apply(normalize_team_name)
                 df_games['xG_num'] = pd.to_numeric(df_games[g_xg_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                 df_games['Goals_num'] = pd.to_numeric(df_games[g_goals_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_goals_col else 0
                 df_games['Shots_num'] = pd.to_numeric(df_games[g_shots_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_shots_col else 0
 
-                # Filter teams matching sidebar
-                df_g_filtered = df_games[df_games[g_team_col].isin(selected_teams)].copy() if g_team_col in df_games.columns else df_games.copy()
-
-                # Group by team
-                team_xg_summary = df_g_filtered.groupby(g_team_col).agg({
+                # Group by normalized team name across all game logs
+                team_xg_summary = df_games.groupby('Team_clean_xg').agg({
                     'xG_num': 'sum',
                     'Goals_num': 'sum',
                     'Shots_num': 'sum'
                 }).reset_index()
 
                 team_xg_summary = team_xg_summary.rename(columns={
-                    g_team_col: 'Team',
+                    'Team_clean_xg': 'Team',
                     'xG_num': 'Total xG',
                     'Goals_num': 'Total Goals',
                     'Shots_num': 'Shots on Goal'
