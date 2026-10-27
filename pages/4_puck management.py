@@ -65,6 +65,7 @@ if df_puck is not None:
         st.caption("Vertaa joukkueiden pelityylejä, kiekonriistoja, menetyksiä ja sisäänvientejä.")
 
         if team_col in df_filtered.columns:
+            # Jätetään pois turhat sarakkeet (peliajat, paidanumerot jne.)
             exclude_words = ['shirt', 'shift', 'ice', 'time', 'gp']
             stat_cols = [c for c in df_filtered.columns if c not in [player_col, team_col, pos_col, 'Player_clean', 'Team_clean', 'Pos_clean'] 
                          and not any(w in c.lower() for w in exclude_words)]
@@ -72,11 +73,11 @@ if df_puck is not None:
             for col in stat_cols:
                 df_filtered[col] = get_col(df_filtered, col)
 
-            # Ryhmitellään joukkueittain
+            # Ryhmitellään joukkueittain summat
             team_agg = df_filtered.groupby('Team_clean')[stat_cols].sum().reset_index()
             team_agg = team_agg.rename(columns={'Team_clean': 'Team'})
 
-            # Lasketaan nettorvo riistot - menetykset
+            # Lasketaan netto-riistot
             if 'Takeaways' in team_agg.columns and 'Puck losses' in team_agg.columns:
                 team_agg['Net Takeaways'] = team_agg['Takeaways'] - team_agg['Puck losses']
 
@@ -94,6 +95,8 @@ if df_puck is not None:
                         title="Riistot ja menetykset joukkueittain",
                         labels={'value': 'Määrä', 'variable': 'Metriikka', 'Team': 'Joukkue'}
                     )
+                    # Numerot palkkien sisään
+                    fig_tka.update_traces(texttemplate='%{x}', textposition='inside')
                     fig_tka.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_tka, use_container_width=True)
 
@@ -107,6 +110,8 @@ if df_puck is not None:
                         title="Kiekonhallinnan netto (Positiivinen = enemmän riistoja kuin menetyksiä)",
                         color='Net Takeaways', color_continuous_scale='Teal'
                     )
+                    # Numerot palkkien sisään
+                    fig_net.update_traces(texttemplate='%{x}', textposition='inside')
                     fig_net.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                     st.plotly_chart(fig_net, use_container_width=True)
 
@@ -125,11 +130,13 @@ if df_puck is not None:
                     title="Sisäänvientien jakauma (Syöttö, Roikkukiekko, Kuljetus)",
                     labels={'value': 'Määrä', 'variable': 'Sisäänvientityyli', 'Team': 'Joukkue'}
                 )
+                # Numerot palkkien sisään pinotussa kaaviossa
+                fig_entries.update_traces(texttemplate='%{x}', textposition='inside')
                 fig_entries.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_entries, use_container_width=True)
 
             st.markdown("---")
-            st.subheader("📋 Joukkueiden raakatilastot taulukkona")
+            st.subheader("📋 Joukkueiden puhtaat yhteenvedot taulukkona")
             st.dataframe(team_agg, use_container_width=True, hide_index=True)
         else:
             st.warning("Joukesaraketta ei löytynyt.")
@@ -144,6 +151,7 @@ if df_puck is not None:
                 df_filtered['Takeaways_num'] = get_col(df_filtered, 'Takeaways')
                 top_tka = df_filtered.sort_values(by='Takeaways_num', ascending=True).tail(10)
                 fig_ptka = px.bar(top_tka, y='Player_clean', x='Takeaways_num', color='Team_clean', orientation='h', title="Eniten riistoja keränneet pelaajat")
+                fig_ptka.update_traces(texttemplate='%{x}', textposition='inside')
                 fig_ptka.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_ptka, use_container_width=True)
 
@@ -154,6 +162,7 @@ if df_puck is not None:
                 df_filtered['Ret_num'] = get_col(df_filtered, ret_col)
                 top_ret = df_filtered.sort_values(by='Ret_num', ascending=True).tail(10)
                 fig_pret = px.bar(top_ret, y='Player_clean', x='Ret_num', color='Team_clean', orientation='h', title="Eniten laukauksen jälkeisiä irtokiekon hakuja")
+                fig_pret.update_traces(texttemplate='%{x}', textposition='inside')
                 fig_pret.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_pret, use_container_width=True)
 
