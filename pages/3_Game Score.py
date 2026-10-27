@@ -32,7 +32,6 @@ def load_data(file_path):
 df = load_data(EXCEL_FILE)
 
 if df is not None:
-    # Helper functions (käsittelee myös Excelin viivat '-')
     def get_col(data, col_name):
         if col_name and col_name in data.columns:
             s = data[col_name].replace(['-', '—', ''], 0)
@@ -55,14 +54,12 @@ if df is not None:
             except:
                 return 0.0
 
-    # Column mappings Game Score -komponenteille
     col_goals = next((c for c in df.columns if c.lower() in ['goals', 'goal']), None)
     col_assists = next((c for c in df.columns if c.lower() in ['assists', 'assist']), None)
     col_sog = next((c for c in df.columns if 'shots on goal' in c.lower() or c.lower() == 'sog'), None)
     col_blk = next((c for c in df.columns if 'blocked shots' in c.lower() or c.lower() == 'blocks'), None)
     col_pd = next((c for c in df.columns if 'penalties drawn' in c.lower()), None)
     
-    # Omat jäähyt (Penalties)
     col_pt = next((c for c in df.columns if c.lower() == 'penalties' or ('penalty' in c.lower() and 'drawn' not in c.lower() and 'time' not in c.lower())), None)
     if not col_pt:
         col_pt = next((c for c in df.columns if any(k in c.lower() for k in ['penalty time', 'pim', 'penalty minutes'])), None)
@@ -76,7 +73,6 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    # Clean numeric values
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     sog = get_col(df, col_sog)
@@ -90,23 +86,20 @@ if df is not None:
     gf = get_col(df, col_gf)
     ga = get_col(df, col_ga)
 
+    # Lasketaan nettoarvot Game Score -komponenteille
     df['Goals_clean'] = g
     df['Assists_clean'] = a_total
     df['Shots_clean'] = sog
     df['Block_clean'] = blk
-    df['Pen_Drawn_clean'] = pd_val
-    df['Pen_Time_clean'] = pt_val
-    df['FOW_clean'] = fow
-    df['FOL_clean'] = fol
-    df['xG_On_clean'] = xg_for
-    df['Opp_xG_On_clean'] = xg_against
-    df['Plus_clean'] = gf
-    df['Minus_clean'] = ga
+    df['Penalties_Total_clean'] = pd_val - pt_val  # Pen. Drawn minus Pen. Time
+    df['Faceoffs_Total_clean'] = fow - fol          # Faceoffs Won minus Faceoffs Lost
+    df['xG_Total_clean'] = xg_for - xg_against      # xG On minus Opponent xG On
+    df['Plus_Minus_clean'] = gf - ga                # Plus (GF) minus Minus (GA)
     
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score calculation (12 komponenttia)
+    # Game Score -laskenta suoraan puhdistetuista komponenteista
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
@@ -141,7 +134,6 @@ if df is not None:
     else:
         df_vertailu = df_filtered
 
-    # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
         p_df = df_filtered[df_filtered[player_col] == player_name].copy()
@@ -202,7 +194,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Click any player row in the table to open their player card. Shows total aggregated totals for all 12 Game Score metrics (+/- sign indicates positive or negative impact).")
+        st.caption("Click any player row in the table to open their player card. Shows total aggregated totals for Game Score metrics.")
         
         if player_col:
             group_cols = [player_col]
@@ -215,18 +207,14 @@ if df is not None:
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
-                '+ Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
-                '+ Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
-                '+ Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
-                '+ Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
-                '+ Pen. Drawn': pd.NamedAgg(column='Pen_Drawn_clean', aggfunc='sum'),
-                '- Pen. Time': pd.NamedAgg(column='Pen_Time_clean', aggfunc='sum'),
-                '+ Faceoffs Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
-                '- Faceoffs Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
-                '+ xG On': pd.NamedAgg(column='xG_On_clean', aggfunc='sum'),
-                '- Opp xG On': pd.NamedAgg(column='Opp_xG_On_clean', aggfunc='sum'),
-                '+ Plus (GF)': pd.NamedAgg(column='Plus_clean', aggfunc='sum'),
-                '- Minus (GA)': pd.NamedAgg(column='Minus_clean', aggfunc='sum')
+                'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
+                'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
+                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
+                'Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
+                'Penalties Total': pd.NamedAgg(column='Penalties_Total_clean', aggfunc='sum'),
+                'Faceoffs Total': pd.NamedAgg(column='Faceoffs_Total_clean', aggfunc='sum'),
+                'xG Total': pd.NamedAgg(column='xG_Total_clean', aggfunc='sum'),
+                'Plus/Minus Total': pd.NamedAgg(column='Plus_Minus_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -245,15 +233,29 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            # Pyöristetään desimaaliluvut
-            for col in ['GS Average', 'GS Total', '+ xG On', '- Opp xG On']:
+            for col in ['GS Average', 'GS Total', 'xG Total']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
 
             leaderboard = leaderboard.sort_values(by="GS Average", ascending=False).reset_index(drop=True)
 
+            # Summarivi taulukon loppuun
+            if not leaderboard.empty:
+                numeric_cols = leaderboard.select_dtypes(include=['number']).columns
+                totals = leaderboard[numeric_cols].sum()
+                totals['Player'] = 'TOTAL / SUM'
+                if 'Team' in leaderboard.columns:
+                    totals['Team'] = '-'
+                if 'Position' in leaderboard.columns:
+                    totals['Position'] = '-'
+                
+                totals_df = pd.DataFrame([totals])
+                leaderboard_with_total = pd.concat([leaderboard, totals_df], ignore_index=True)
+            else:
+                leaderboard_with_total = leaderboard
+
             event = st.dataframe(
-                leaderboard, 
+                leaderboard_with_total, 
                 use_container_width=True, 
                 hide_index=True,
                 on_select="rerun",
@@ -263,8 +265,9 @@ if df is not None:
 
             if event and event.selection and event.selection.rows:
                 clicked_index = event.selection.rows[0]
-                clicked_player = leaderboard.iloc[clicked_index]['Player']
-                show_player_card(clicked_player)
+                if clicked_index < len(leaderboard):
+                    clicked_player = leaderboard.iloc[clicked_index]['Player']
+                    show_player_card(clicked_player)
 
     elif selected_tab == "📊 Player Progression":
         st.subheader("Player Progression Curve During the Season")
