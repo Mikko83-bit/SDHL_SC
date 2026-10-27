@@ -17,6 +17,9 @@ def normalize_team_name(name):
     cleaned = name.strip()
     upper_name = cleaned.upper()
     
+    if not cleaned or cleaned in ['-', '—', 'nan', 'NaN']:
+        return "Unknown"
+    
     # Map variations to standard names
     if "LULEA" in upper_name:
         return "Lulea/MSSK"
@@ -34,6 +37,10 @@ def normalize_team_name(name):
         return "Linkoping"
     if "SKELLEFTEA" in upper_name or "SKELLEFTEÅ" in upper_name:
         return "Skelleftea"
+    if "HV" in upper_name:
+        return "HV71"
+    if "SDE" in upper_name:
+        return "SDE HF"
     
     return cleaned
 
@@ -87,6 +94,10 @@ if df_puck is not None:
 
     df_puck['Player_clean'] = df_puck[player_col] if player_col in df_puck.columns else 'Unknown'
     df_puck['Team_clean'] = df_puck[team_col].apply(normalize_team_name) if team_col in df_puck.columns else 'Unknown'
+    
+    # Remove 'Unknown' teams from puck data
+    df_puck = df_puck[df_puck['Team_clean'] != 'Unknown']
+
     df_puck['Pos_clean'] = df_puck[pos_col].astype(str).str.upper().str.strip() if pos_col in df_puck.columns else 'F'
 
     # --- SIDEBAR FILTERS ---
@@ -256,8 +267,10 @@ if df_puck is not None:
             g_shots_col = next((c for c in df_games.columns if 'shots on goal' in c.lower()), None)
 
             if g_team_col and g_xg_col:
-                # Normalize team names in game logs as well
+                # Normalize team names and filter out Unknown
                 df_games['Team_clean_xg'] = df_games[g_team_col].apply(normalize_team_name)
+                df_games = df_games[df_games['Team_clean_xg'] != 'Unknown']
+
                 df_games['xG_num'] = pd.to_numeric(df_games[g_xg_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                 df_games['Goals_num'] = pd.to_numeric(df_games[g_goals_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_goals_col else 0
                 df_games['Shots_num'] = pd.to_numeric(df_games[g_shots_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_shots_col else 0
