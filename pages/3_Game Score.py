@@ -16,7 +16,6 @@ def load_data(file_path):
         df = pd.read_excel(file_path)
         df.columns = [str(col).strip() for col in df.columns]
         if 'Date' in df.columns:
-            # dayfirst=True varmistaa, että suomalainen pvm-muoto (9.9.2026) tulkitaan oikein
             df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
         return df
     except Exception as e:
@@ -140,7 +139,11 @@ if df is not None:
     # --- PLAYER CARD DIALOG ---
     @st.dialog("Player Card", width="large")
     def show_player_card(player_name):
-        p_df = df_filtered[df_filtered[player_col] == player_name].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == player_name]
+        p_df = df_filtered[df_filtered[player_col] == player_name].copy()
+        if not p_df.empty and 'Date' in p_df.columns:
+            p_df['Temp_Date'] = pd.to_datetime(p_df['Date'], dayfirst=True, errors='coerce')
+            p_df = p_df.sort_values(by='Temp_Date')
+
         if p_df.empty:
             st.warning("No data found for this player.")
             return
@@ -255,7 +258,10 @@ if df is not None:
                 if st.button("Open Player Card 🃏", key='btn_card_tab2'):
                     show_player_card(selected_player)
 
-                player_df = df_filtered[df_filtered[player_col] == selected_player].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player]
+                player_df = df_filtered[df_filtered[player_col] == selected_player].copy()
+                if not player_df.empty and 'Date' in player_df.columns:
+                    player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], dayfirst=True, errors='coerce')
+                    player_df = player_df.sort_values(by='Temp_Date')
 
                 if not player_df.empty and 'Date' in player_df.columns:
                     fig = px.line(
@@ -271,8 +277,11 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
-            # Järjestetään pelit aikajärjestykseen päivämäärän mukaan
-            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].sort_values(by='Date') if 'Date' in df_filtered.columns else df_filtered[df_filtered[player_col] == selected_player_bar]
+            # Varma ja turvallinen lajittelu päivämäärän mukaan
+            player_df = df_filtered[df_filtered[player_col] == selected_player_bar].copy()
+            if not player_df.empty and 'Date' in player_df.columns:
+                player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], dayfirst=True, errors='coerce')
+                player_df = player_df.sort_values(by='Temp_Date')
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
@@ -289,7 +298,7 @@ if df is not None:
 
                 x_axis_col = 'Date' if 'Date' in player_df.columns else player_df.columns[0]
 
-                # Positiiviset ja negatiiviset eriteltyinä väreillä
+                # Positiiviset ja negatiiviset väreittäin eriteltyinä
                 player_df['Performance'] = player_df['Game_Score'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
 
                 fig_bar = px.bar(
