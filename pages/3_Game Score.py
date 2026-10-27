@@ -34,7 +34,7 @@ df = load_data(EXCEL_FILE)
 if df is not None:
     # Helper functions
     def get_col(data, col_name):
-        if col_name in data.columns:
+        if col_name and col_name in data.columns:
             return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
         return pd.Series(0, index=data.index)
 
@@ -54,13 +54,13 @@ if df is not None:
             except:
                 return 0.0
 
-    # Column mappings (etsitään joustavasti oikeat sarakkeet)
-    col_goals = next((c for c in df.columns if c.lower() == 'goals'), 'Goals')
-    col_assists = next((c for c in df.columns if c.lower() == 'assists'), 'Assists')
-    col_points = next((c for c in df.columns if c.lower() == 'points'), 'Points')
-    col_sog = next((c for c in df.columns if 'shots on goal' in c.lower()), 'Shots on goal')
-    col_xg = next((c for c in df.columns if 'xg' in c.lower() and 'expected' in c.lower()), 'xG (Expected goals)')
-    col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), 'xG per shot')
+    # Column mappings
+    col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
+    col_assists = next((c for c in df.columns if c.lower() == 'assists'), None)
+    col_points = next((c for c in df.columns if c.lower() == 'points'), None)
+    col_sog = next((c for c in df.columns if 'shots on goal' in c.lower()), None)
+    col_xg = next((c for c in df.columns if 'xg' in c.lower() and 'expected' in c.lower()), None)
+    col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
     col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
     col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
     col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
@@ -73,24 +73,30 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
+    # Puhtaat, numeeriset arvot taustalle (muuttaa myös viivat ' - ' turvallisesti nolliksi)
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     pts = get_col(df, col_points)
     sog = get_col(df, col_sog)
-    blk = get_col(df, col_blk) if col_blk else pd.Series(0, index=df.index)
-    pd_val = get_col(df, col_pd) if col_pd else pd.Series(0, index=df.index)
-    pt_val = get_col(df, col_pt) if col_pt else pd.Series(0, index=df.index)
-    fow = get_col(df, col_fow) if col_fow else pd.Series(0, index=df.index)
-    fol = get_col(df, col_fol) if col_fol else pd.Series(0, index=df.index)
-    xg_for = get_col(df, col_xg_on) if col_xg_on else pd.Series(0, index=df.index)
-    xg_against = get_col(df, col_opp_xg_on) if col_opp_xg_on else pd.Series(0, index=df.index)
-    gf = get_col(df, col_gf) if col_gf else pd.Series(0, index=df.index)
-    ga = get_col(df, col_ga) if col_ga else pd.Series(0, index=df.index)
+    xg_val = get_col(df, col_xg)
+    xg_ps_val = get_col(df, col_xg_per_shot)
+    
+    blk = get_col(df, col_blk)
+    pd_val = get_col(df, col_pd)
+    pt_val = get_col(df, col_pt)
+    fow = get_col(df, col_fow)
+    fol = get_col(df, col_fol)
+    xg_for = get_col(df, col_xg_on)
+    xg_against = get_col(df, col_opp_xg_on)
+    gf = get_col(df, col_gf)
+    ga = get_col(df, col_ga)
 
     df['Goals_clean'] = g
     df['Assists_clean'] = a_total
     df['Points_clean'] = pts
     df['Shots_clean'] = sog
+    df['Total_xG_clean'] = xg_val
+    df['Avg_xG_Shot_clean'] = xg_ps_val
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
@@ -194,13 +200,13 @@ if df is not None:
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
-                # Raakadatat mukaan taulukkoon:
-                'Goals': pd.NamedAgg(column=col_goals, aggfunc='sum'),
-                'Assists': pd.NamedAgg(column=col_assists, aggfunc='sum'),
-                'Points': pd.NamedAgg(column=col_points, aggfunc='sum'),
-                'Shots': pd.NamedAgg(column=col_sog, aggfunc='sum'),
-                'Total xG': pd.NamedAgg(column=col_xg, aggfunc='sum'),
-                'Avg xG/Shot': pd.NamedAgg(column=col_xg_per_shot, aggfunc='mean')
+                # Käytetään puhtaita numeerisia sarakkeita virheiden välttämiseksi:
+                'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
+                'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
+                'Points': pd.NamedAgg(column='Points_clean', aggfunc='sum'),
+                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
+                'Total xG': pd.NamedAgg(column='Total_xG_clean', aggfunc='sum'),
+                'Avg xG/Shot': pd.NamedAgg(column='Avg_xG_Shot_clean', aggfunc='mean')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -219,7 +225,6 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            # Pyöristetään desimaalit fiksusti
             for col in ['GS Average', 'GS Total', 'Total xG', 'Avg xG/Shot']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
@@ -333,7 +338,7 @@ if df is not None:
                 with col1:
                     st.metric("Player Average", f"{player_oma_ka:.2f}")
                 with col2:
-                    st.metric("SDHL Average (filtered)", f"{sd_ka if 'sd_ka' in locals() else sdhl_ka:.2f}")
+                    st.metric("SDHL Average (filtered)", f"{sdhl_ka:.2f}")
                 with col3:
                     if team_col:
                         st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
