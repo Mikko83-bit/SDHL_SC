@@ -55,16 +55,10 @@ if df is not None:
             except:
                 return 0.0
 
-    # Column mappings
+    # Column mappings Game Score -komponenteille
     col_goals = next((c for c in df.columns if c.lower() in ['goals', 'goal']), None)
     col_assists = next((c for c in df.columns if c.lower() in ['assists', 'assist']), None)
-    col_points = next((c for c in df.columns if c.lower() in ['points', 'point']), None)
     col_sog = next((c for c in df.columns if 'shots on goal' in c.lower() or c.lower() == 'sog'), None)
-    
-    # Tarkka haku xG (Expected goals) -sarakkeelle
-    col_xg = next((c for c in df.columns if 'expected goals' in c.lower() or c.lower() == 'xg'), None)
-    
-    col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
     col_blk = next((c for c in df.columns if 'blocked shots' in c.lower() or c.lower() == 'blocks'), None)
     col_pd = next((c for c in df.columns if 'penalties drawn' in c.lower()), None)
     
@@ -85,11 +79,7 @@ if df is not None:
     # Clean numeric values
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
-    pts = get_col(df, col_points)
     sog = get_col(df, col_sog)
-    xg_val = get_col(df, col_xg)
-    xg_ps_val = get_col(df, col_xg_per_shot)
-    
     blk = get_col(df, col_blk)
     pd_val = get_col(df, col_pd)
     pt_val = get_col(df, col_pt)
@@ -102,10 +92,7 @@ if df is not None:
 
     df['Goals_clean'] = g
     df['Assists_clean'] = a_total
-    df['Points_clean'] = pts
     df['Shots_clean'] = sog
-    df['Total_xG_clean'] = xg_val
-    df['Avg_xG_Shot_clean'] = xg_ps_val
     df['Block_clean'] = blk
     df['Pen_Drawn_clean'] = pd_val
     df['Pen_Time_clean'] = pt_val
@@ -119,7 +106,7 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score calculation
+    # Game Score calculation (12 komponenttia)
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
@@ -129,7 +116,6 @@ if df is not None:
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
     team_col = next((c for c in df.columns if c.lower() == 'team'), None)
-    opponent_col = next((c for c in df.columns if 'opponent' in c.lower()), None)
 
     # --- SIDEBAR: FILTERS ---
     st.sidebar.header("🔍 Filters")
@@ -216,7 +202,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Click any player row in the table to open their player card. Shows total aggregated values for stats contributing to Game Score.")
+        st.caption("Click any player row in the table to open their player card. Shows total aggregated totals for all 12 Game Score metrics (+/- sign indicates positive or negative impact).")
         
         if player_col:
             group_cols = [player_col]
@@ -229,20 +215,18 @@ if df is not None:
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
-                'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
-                'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
-                'Points': pd.NamedAgg(column='Points_clean', aggfunc='sum'),
-                'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
-                'Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
-                'Pen. Drawn': pd.NamedAgg(column='Pen_Drawn_clean', aggfunc='sum'),
-                'Pen. Time': pd.NamedAgg(column='Pen_Time_clean', aggfunc='sum'),
-                'Faceoffs Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
-                'Faceoffs Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
-                'xG With On': pd.NamedAgg(column='xG_On_clean', aggfunc='sum'),
-                'Opponent xG On': pd.NamedAgg(column='Opp_xG_On_clean', aggfunc='sum'),
-                'Plus (GF)': pd.NamedAgg(column='Plus_clean', aggfunc='sum'),
-                'Minus (GA)': pd.NamedAgg(column='Minus_clean', aggfunc='sum'),
-                'Total xG': pd.NamedAgg(column='Total_xG_clean', aggfunc='sum')
+                '+ Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
+                '+ Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
+                '+ Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
+                '+ Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
+                '+ Pen. Drawn': pd.NamedAgg(column='Pen_Drawn_clean', aggfunc='sum'),
+                '- Pen. Time': pd.NamedAgg(column='Pen_Time_clean', aggfunc='sum'),
+                '+ Faceoffs Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
+                '- Faceoffs Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
+                '+ xG On': pd.NamedAgg(column='xG_On_clean', aggfunc='sum'),
+                '- Opp xG On': pd.NamedAgg(column='Opp_xG_On_clean', aggfunc='sum'),
+                '+ Plus (GF)': pd.NamedAgg(column='Plus_clean', aggfunc='sum'),
+                '- Minus (GA)': pd.NamedAgg(column='Minus_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -261,7 +245,8 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            for col in ['GS Average', 'GS Total', 'Total xG', 'xG With On', 'Opponent xG On']:
+            # Pyöristetään desimaaliluvut
+            for col in ['GS Average', 'GS Total', '+ xG On', '- Opp xG On']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
 
@@ -380,9 +365,7 @@ if df is not None:
             eff_agg = df_filtered.groupby(group_cols).agg(
                 Games=('Game_Score', 'count'),
                 Goals=('Goals_clean', 'sum'),
-                Total_xG=('Total_xG_clean', 'sum'),
-                Shots=('Shots_clean', 'sum'),
-                Avg_xG_Shot=('Avg_xG_Shot_clean', 'mean')
+                Shots=('Shots_clean', 'sum')
             ).reset_index()
 
             eff_rename = {player_col: 'Player'}
@@ -392,30 +375,13 @@ if df is not None:
                 eff_rename['Pos_clean'] = 'Position'
             eff_agg = eff_agg.rename(columns=eff_rename)
 
-            eff_agg['Goals - xG'] = (eff_agg['Goals'] - eff_agg['Total_xG']).round(2)
-            eff_agg['Total_xG'] = eff_agg['Total_xG'].round(2)
-            eff_agg['Shooting %'] = ((eff_agg['Goals'] / eff_agg['Shots'].replace(0, 1)) * 100).round(1)
-            eff_agg['Avg xG/Shot'] = eff_agg['Avg_xG_Shot'].round(3)
-
             eff_agg = eff_agg.sort_values(by="Goals", ascending=False).reset_index(drop=True)
 
             st.dataframe(
-                eff_agg[['Player', 'Team', 'Position', 'Games', 'Goals', 'Total_xG', 'Goals - xG', 'Shots', 'Shooting %', 'Avg xG/Shot']],
+                eff_agg[['Player', 'Team', 'Position', 'Games', 'Goals', 'Shots']],
                 use_container_width=True,
                 hide_index=True
             )
-
-            st.markdown("### 📊 Goals vs Expected Goals (xG)")
-            top_scorers = eff_agg.head(15)
-            
-            fig_eff = px.bar(
-                top_scorers, x='Player', y=['Goals', 'Total_xG'],
-                barmode='group',
-                title="Top 15 Scorers: Actual Goals vs Expected Goals (xG)",
-                labels={'value': 'Count', 'variable': 'Metric'}
-            )
-            fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_eff, use_container_width=True)
 
     elif selected_tab == "🏒 Faceoff Analytics":
         st.subheader("🏒 Faceoff Circle Analytics")
