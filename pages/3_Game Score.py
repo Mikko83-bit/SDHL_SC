@@ -59,7 +59,7 @@ if df is not None:
     col_assists = next((c for c in df.columns if c.lower() == 'assists'), None)
     col_points = next((c for c in df.columns if c.lower() == 'points'), None)
     col_sog = next((c for c in df.columns if 'shots on goal' in c.lower()), None)
-    col_xg = next((c for c in df.columns if 'xg' in c.lower() and 'expected' in c.lower()), None)
+    col_xg = next((c for c in df.columns if c.lower() and 'xg' in c.lower() and 'expected' in c.lower()), None)
     col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
     col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
     col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
@@ -97,8 +97,16 @@ if df is not None:
     df['Shots_clean'] = sog
     df['Total_xG_clean'] = xg_val
     df['Avg_xG_Shot_clean'] = xg_ps_val
+    df['Block_clean'] = blk
+    df['Pen_Drawn_clean'] = pd_val
+    df['Pen_Time_clean'] = pt_val
     df['FOW_clean'] = fow
     df['FOL_clean'] = fol
+    df['xG_On_clean'] = xg_for
+    df['Opp_xG_On_clean'] = xg_against
+    df['Plus_clean'] = gf
+    df['Minus_clean'] = ga
+    
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
@@ -198,8 +206,8 @@ if df is not None:
     st.markdown("---")
 
     if selected_tab == "🏆 Season Leaderboard":
-        st.subheader("🏆 Player Leaderboard")
-        st.caption("Click any player row in the table to open their player card.")
+        st.subheader("🏆 Player Leaderboard & Game Score Components")
+        st.caption("Click any player row in the table to open their player card. Shows total aggregated values for stats contributing to Game Score.")
         
         if player_col:
             group_cols = [player_col]
@@ -216,8 +224,16 @@ if df is not None:
                 'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
                 'Points': pd.NamedAgg(column='Points_clean', aggfunc='sum'),
                 'Shots': pd.NamedAgg(column='Shots_clean', aggfunc='sum'),
-                'Total xG': pd.NamedAgg(column='Total_xG_clean', aggfunc='sum'),
-                'Avg xG/Shot': pd.NamedAgg(column='Avg_xG_Shot_clean', aggfunc='mean')
+                'Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
+                'Pen. Drawn': pd.NamedAgg(column='Pen_Drawn_clean', aggfunc='sum'),
+                'Pen. Time': pd.NamedAgg(column='Pen_Time_clean', aggfunc='sum'),
+                'Faceoffs Won': pd.NamedAgg(column='FOW_clean', aggfunc='sum'),
+                'Faceoffs Lost': pd.NamedAgg(column='FOL_clean', aggfunc='sum'),
+                'xG With On': pd.NamedAgg(column='xG_On_clean', aggfunc='sum'),
+                'Opponent xG On': pd.NamedAgg(column='Opp_xG_On_clean', aggfunc='sum'),
+                'Plus (GF)': pd.NamedAgg(column='Plus_clean', aggfunc='sum'),
+                'Minus (GA)': pd.NamedAgg(column='Minus_clean', aggfunc='sum'),
+                'Total xG': pd.NamedAgg(column='Total_xG_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -236,7 +252,8 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            for col in ['GS Average', 'GS Total', 'Total xG', 'Avg xG/Shot']:
+            # Pyöristetään desimaaliluvut siististi
+            for col in ['GS Average', 'GS Total', 'Total xG', 'xG With On', 'Opponent xG On']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
 
@@ -419,7 +436,7 @@ if df is not None:
             fo_agg['Total Faceoffs'] = fo_agg['FOW'] + fo_agg['FOL']
             fo_agg['FO Win %'] = ((fo_agg['FOW'] / fo_agg['Total Faceoffs'].replace(0, 1)) * 100).round(1)
 
-            min_fo_filter = slider_val = st.slider("Min. total faceoffs:", 0, 100, 10, 1)
+            min_fo_filter = st.slider("Min. total faceoffs:", 0, 100, 10, 1)
             fo_filtered = fo_agg[fo_agg['Total Faceoffs'] >= min_fo_filter].sort_values(by='FO Win %', ascending=False).reset_index(drop=True)
 
             st.dataframe(
