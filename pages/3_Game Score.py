@@ -141,7 +141,8 @@ if df is not None:
     def show_player_card(player_name):
         p_df = df_filtered[df_filtered[player_col] == player_name].copy()
         if not p_df.empty and 'Date' in p_df.columns:
-            p_df = p_df.sort_values(by='Date')
+            p_df['Temp_Date'] = pd.to_datetime(p_df['Date'], errors='coerce')
+            p_df = p_df.sort_values(by='Temp_Date')
 
         if p_df.empty:
             st.warning("No data found for this player.")
@@ -259,7 +260,8 @@ if df is not None:
 
                 player_df = df_filtered[df_filtered[player_col] == selected_player].copy()
                 if not player_df.empty and 'Date' in player_df.columns:
-                    player_df = player_df.sort_values(by='Date')
+                    player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], errors='coerce')
+                    player_df = player_df.sort_values(by='Temp_Date')
 
                 if not player_df.empty and 'Date' in player_df.columns:
                     fig = px.line(
@@ -275,10 +277,11 @@ if df is not None:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
             
-            # Suora ja puhdas lajittelu suoraan Date-sarakkeen mukaan
+            # Pakotettu luotettava aikajärjestys Temp_Date-muunnoksella
             player_df = df_filtered[df_filtered[player_col] == selected_player_bar].copy()
             if not player_df.empty and 'Date' in player_df.columns:
-                player_df = player_df.sort_values(by='Date')
+                player_df['Temp_Date'] = pd.to_datetime(player_df['Date'], errors='coerce')
+                player_df = player_df.sort_values(by='Temp_Date')
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
