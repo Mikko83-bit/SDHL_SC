@@ -32,10 +32,12 @@ def load_data(file_path):
 df = load_data(EXCEL_FILE)
 
 if df is not None:
-    # Helper functions
+    # Helper functions (muunnettu käsittelemään myös Excelin viivat '-')
     def get_col(data, col_name):
         if col_name and col_name in data.columns:
-            return pd.to_numeric(data[col_name], errors='coerce').fillna(0)
+            # Korvataan viivat '-' ja tyhjät nollilla ennen numeromuunnosta
+            s = data[col_name].replace(['-', '—', ''], 0)
+            return pd.to_numeric(s, errors='coerce').fillna(0)
         return pd.Series(0, index=data.index)
 
     def parse_toi(val):
@@ -54,26 +56,33 @@ if df is not None:
             except:
                 return 0.0
 
-    # Column mappings
-    col_goals = next((c for c in df.columns if c.lower() == 'goals'), None)
-    col_assists = next((c for c in df.columns if c.lower() == 'assists'), None)
-    col_points = next((c for c in df.columns if c.lower() == 'points'), None)
-    col_sog = next((c for c in df.columns if 'shots on goal' in c.lower()), None)
-    col_xg = next((c for c in df.columns if c.lower() and 'xg' in c.lower() and 'expected' in c.lower()), None)
+    # Sarakkeiden haku (varmistetaan ettei Penalties ja Penalties drawn sekoitu)
+    col_goals = next((c for c in df.columns if c.lower() in ['goals', 'goal']), None)
+    col_assists = next((c for c in df.columns if c.lower() in ['assists', 'assist']), None)
+    col_points = next((c for c in df.columns if c.lower() in ['points', 'point']), None)
+    col_sog = next((c for c in df.columns if 'shots on goal' in c.lower() or c.lower() == 'sog'), None)
+    col_xg = next((c for c in df.columns if 'xg' in c.lower() and 'expected' in c.lower()), None)
     col_xg_per_shot = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
-    col_blk = next((c for c in df.columns if c.lower() == 'blocked shots'), None)
-    col_pd = next((c for c in df.columns if c.lower() == 'penalties drawn'), None)
-    col_pt = next((c for c in df.columns if c.lower() == 'penalty time'), None)
-    col_fow = next((c for c in df.columns if c.lower() == 'faceoffs won'), None)
-    col_fol = next((c for c in df.columns if c.lower() == 'faceoffs lost'), None)
+    col_blk = next((c for c in df.columns if 'blocked shots' in c.lower() or c.lower() == 'blocks'), None)
+    
+    # Hankitut jäähyt (Penalties drawn)
+    col_pd = next((c for c in df.columns if 'penalties drawn' in c.lower()), None)
+    
+    # Omat jäähyt (Penalties) - haetaan tarkasti niin, että 'drawn' ei sotke hakua
+    col_pt = next((c for c in df.columns if c.lower() == 'penalties' or ('penalty' in c.lower() and 'drawn' not in c.lower() and 'time' not in c.lower())), None)
+    if not col_pt:
+        col_pt = next((c for c in df.columns if any(k in c.lower() for k in ['penalty time', 'pim', 'penalty minutes'])), None)
+
+    col_fow = next((c for c in df.columns if 'faceoffs won' in c.lower() or c.lower() == 'fow'), None)
+    col_fol = next((c for c in df.columns if 'faceoffs lost' in c.lower() or c.lower() == 'fol'), None)
     col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
     col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
-    col_gf = next((c for c in df.columns if c.lower() == 'plus'), None)
-    col_ga = next((c for c in df.columns if c.lower() == 'minus'), None)
+    col_gf = next((c for c in df.columns if c.lower() in ['plus', 'gf']), None)
+    col_ga = next((c for c in df.columns if c.lower() in ['minus', 'ga']), None)
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    # Clean numeric values
+    # Puhtaat, numeeriset arvot taustalle
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     pts = get_col(df, col_points)
@@ -110,7 +119,7 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score calculation
+    # Game Score -laskenta
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
@@ -252,7 +261,6 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            # Pyöristetään desimaaliluvut siististi
             for col in ['GS Average', 'GS Total', 'Total xG', 'xG With On', 'Opponent xG On']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
