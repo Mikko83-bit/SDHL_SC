@@ -73,7 +73,7 @@ if df is not None:
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
-    # Puhtaat, numeeriset arvot taustalle
+    # Clean numeric values
     g = get_col(df, col_goals)
     a_total = get_col(df, col_assists)
     pts = get_col(df, col_points)
@@ -102,7 +102,7 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score -laskenta
+    # Game Score calculation
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
@@ -119,7 +119,7 @@ if df is not None:
     
     if team_col:
         all_teams = sorted(df[team_col].dropna().unique())
-        selected_teams = st.sidebar.multiselect("Select your team:", all_teams, default=all_teams)
+        selected_teams = st.sidebar.multiselect("Select team(s):", all_teams, default=all_teams)
         df_filtered = df[df[team_col].isin(selected_teams)] if selected_teams else df.copy()
     else:
         df_filtered = df.copy()
@@ -170,7 +170,7 @@ if df is not None:
         
         if 'Date_Str' in p_df.columns:
             card_order = list(p_df['Date_Str'].unique())
-            fig_gs = px.line(p_df, x='Date_Str', y='Game_Score', markers=True, title="Game Score Game History")
+            fig_gs = px.line(p_df, x='Date_Str', y='Game_Score', markers=True, title="Game Score History")
             fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
             fig_gs.update_xaxes(categoryorder='array', categoryarray=card_order)
             st.plotly_chart(fig_gs, use_container_width=True)
@@ -199,7 +199,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard")
-        st.caption("Klikkaa mitä tahansa pelaajariviä taulukosta avataksesi pelaajakortin.")
+        st.caption("Click any player row in the table to open their player card.")
         
         if player_col:
             group_cols = [player_col]
@@ -276,7 +276,7 @@ if df is not None:
                     prog_order = list(player_df['Date_Str'].unique())
                     fig = px.line(
                         player_df, x='Date_Str', y='Game_Score', markers=True,
-                        title=f"Player {selected_player} Game Score Game History"
+                        title=f"Player {selected_player} Game Score History"
                     )
                     fig.update_layout(xaxis_type='category')
                     fig.update_xaxes(categoryorder='array', categoryarray=prog_order)
@@ -343,7 +343,7 @@ if df is not None:
 
     elif selected_tab == "🎯 Efficiency & Finishing":
         st.subheader("🎯 Player Finishing & Scoring Efficiency")
-        st.caption("Vertailu siitä, kuinka paljon pelaaja tekee maaleja suhteessa odotettuihin maaleihin (xG) ja laukauksiin.")
+        st.caption("Comparison of actual goals scored relative to expected goals (xG) and shots.")
 
         if player_col:
             group_cols = [player_col]
@@ -380,7 +380,7 @@ if df is not None:
                 hide_index=True
             )
 
-            st.markdown("### 📊 Maalit vs Odotetut Maalit (xG)")
+            st.markdown("### 📊 Goals vs Expected Goals (xG)")
             top_scorers = eff_agg.head(15)
             
             fig_eff = px.bar(
@@ -394,7 +394,7 @@ if df is not None:
 
     elif selected_tab == "🏒 Faceoff Analytics":
         st.subheader("🏒 Faceoff Circle Analytics")
-        st.caption("Pelaajien aloitusvoitot, -tappiot ja aloitusprosentit.")
+        st.caption("Player faceoff wins, losses, and win percentages.")
 
         if player_col:
             group_cols = [player_col]
@@ -419,7 +419,7 @@ if df is not None:
             fo_agg['Total Faceoffs'] = fo_agg['FOW'] + fo_agg['FOL']
             fo_agg['FO Win %'] = ((fo_agg['FOW'] / fo_agg['Total Faceoffs'].replace(0, 1)) * 100).round(1)
 
-            min_fo_filter = st.slider("Min. aloitusten määrä yhteensä:", 0, 100, 10, 1)
+            min_fo_filter = slider_val = st.slider("Min. total faceoffs:", 0, 100, 10, 1)
             fo_filtered = fo_agg[fo_agg['Total Faceoffs'] >= min_fo_filter].sort_values(by='FO Win %', ascending=False).reset_index(drop=True)
 
             st.dataframe(
@@ -428,14 +428,14 @@ if df is not None:
                 hide_index=True
             )
 
-            st.markdown("### 📊 Top Aloittajat (Aloitusprosentti %)")
+            st.markdown("### 📊 Top Faceoff Takers (Win %)")
             top_fo = fo_filtered.head(15)
             if not top_fo.empty:
                 fig_fo = px.bar(
                     top_fo, x='Player', y='FO Win %',
                     text='FO Win %',
-                    title="Top Faceoff Win % (Asetetulla aloitussuodattimella)",
-                    labels={'FO Win %': 'Aloitusprosentti (%)'}
+                    title="Top Faceoff Win % (With selected minimum faceoffs filter)",
+                    labels={'FO Win %': 'Faceoff Win %'}
                 )
                 fig_fo.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
                 fig_fo.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
