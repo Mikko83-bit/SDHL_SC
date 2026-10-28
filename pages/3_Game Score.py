@@ -43,8 +43,23 @@ def load_faceoffs_data(file_path):
         except Exception as e2:
             return None
 
+@st.cache_data
+def load_teams_data(file_path):
+    try:
+        df_teams = pd.read_excel(file_path, sheet_name='Teams')
+        df_teams.columns = [str(col).strip() for col in df_teams.columns]
+        return df_teams
+    except Exception as e:
+        try:
+            df_teams = pd.read_excel(f"../{file_path}", sheet_name='Teams')
+            df_teams.columns = [str(col).strip() for col in df_teams.columns]
+            return df_teams
+        except Exception as e2:
+            return None
+
 df = load_data(EXCEL_FILE)
 df_faceoffs = load_faceoffs_data(EXCEL_FILE)
+df_teams = load_teams_data(EXCEL_FILE)
 
 if df is not None:
     def get_col(data, col_name):
@@ -84,8 +99,6 @@ if df is not None:
     
     col_net_xg = next((c for c in df.columns if 'net xg' in c.lower()), None)
     col_xg_for = next((c for c in df.columns if 'xg with a player on' in c.lower() and 'opp' not in c.lower()), None)
-    
-    # Haetaan vastustajan xG varmasti oikein riippumatta siitä miten sarake on nimetty
     col_xg_opp = next((c for c in df.columns if ('opp' in c.lower() or 'opponent' in c.lower()) and 'xg' in c.lower()), None)
 
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
@@ -104,8 +117,6 @@ if df is not None:
     fol = get_col(df, col_fol)
     net_xg_val = get_col(df, col_net_xg)
     xg_for_val = get_col(df, col_xg_for)
-    
-    # Pakotetaan vastustajan xG aina positiiviseksi arvolla abs()
     xg_opp_val = get_col(df, col_xg_opp).abs()
 
     if col_xg_indiv:
@@ -131,26 +142,22 @@ if df is not None:
 
     # --- POSITIO-KOHTAISET GAME SCORE -KAAVAT ---
     df['Game_Score'] = 0.0
-    
     mask_f = df['Pos_clean'] == 'F'
     mask_d = df['Pos_clean'] == 'D'
     mask_other = ~(mask_f | mask_d)
 
-    # 1. Hyökkääjien kaava
     df.loc[mask_f, 'Game_Score'] = (
         (0.85 * g[mask_f]) + (0.75 * a_total[mask_f]) + (0.075 * sog[mask_f]) + 
         (0.05 * blk[mask_f]) + (0.15 * pd_val[mask_f]) - (0.15 * pt_val[mask_f]) + 
         (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
     )
 
-    # 2. Puolustajien kaava
     df.loc[mask_d, 'Game_Score'] = (
         (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
         (0.15 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
         (0.45 * net_xg_val[mask_d])
     )
 
-    # 3. Varakaava muille
     df.loc[mask_other, 'Game_Score'] = (
         (0.75 * g[mask_other]) + (0.7 * a_total[mask_other]) + (0.075 * sog[mask_other]) + 
         (0.1 * blk[mask_other]) + (0.15 * pd_val[mask_other]) - (0.15 * pt_val[mask_other]) + 
@@ -214,21 +221,6 @@ if df is not None:
         with col4:
             st.metric("TOTAL ASSISTS", int(p_df['Assists_clean'].sum()))
 
-        st.markdown("### 📈 Season Trend Charts")
-        
-        if 'Date_Str' in p_df.columns:
-            card_order = list(p_df['Date_Str'].unique())
-            fig_gs = px.line(p_df, x='Date_Str', y='Game_Score', markers=True, title="Game Score History")
-            fig_gs.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-            fig_gs.update_xaxes(categoryorder='array', categoryarray=card_order)
-            st.plotly_chart(fig_gs, use_container_width=True)
-
-        if col_toi and 'Date_Str' in p_df.columns:
-            fig_toi = px.line(p_df, x='Date_Str', y='TOI_clean', markers=True, title="Time on Ice (Minutes per Match)")
-            fig_toi.update_layout(xaxis_type='category', margin=dict(l=20, r=20, t=30, b=20), height=230)
-            fig_toi.update_xaxes(categoryorder='array', categoryarray=card_order)
-            st.plotly_chart(fig_toi, use_container_width=True)
-
     # --- NAVIGATION ---
     selected_tab = st.radio(
         "Navigation",
@@ -239,6 +231,7 @@ if df is not None:
             "🎯 Efficiency & Finishing",
             "🛡️ xG Rates (/60)",
             "🏒 Faceoffs by Zone",
+            "📋 Teams SDHL",
             "📁 Raw Data"
         ],
         horizontal=True,
@@ -457,10 +450,8 @@ if df is not None:
                 Blocked_Shots=('Block_clean', 'sum')
             ).reset_index()
 
-            # Suodatetaan pois vähän pelanneet
             rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
 
-            # Lasketaan per 60 min (xGA on nyt varmasti positiivinen luku)
             rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
@@ -480,7 +471,6 @@ if df is not None:
                 use_container_width=True,
                 hide_index=True
             )
-            st.info("💡 **Vinkki:** Nyt `xGA/60` näyttää oikein vastustajan luoman maaliodottaman positiivisena lukuna, ja `Net xG/60` laskee erotuksen puhtaasti oikein.")
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
@@ -515,6 +505,36 @@ if df is not None:
             st.dataframe(processed_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Win %', 'NZ Win %', 'OZ Win %']], use_container_width=True, hide_index=True)
         else:
             st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
+
+    elif selected_tab == "📋 Teams SDHL":
+        st.subheader("📋 SDHL Team-Level Analytics & Corsi")
+        st.caption("Joukkuekohtaiset tilastot: Corsi%, maalit, maalipaikat, aloitukset ja odotetut maalit (xG).")
+
+        if df_teams is not None:
+            teams_df = df_teams.copy()
+            st.dataframe(teams_df, use_container_width=True, hide_index=True)
+
+            # Visuaalinen vertailu Corsi% ja Net xG -arvoille jos sarakkeet löytyvät
+            cors_col = next((c for c in teams_df.columns if 'corsi' in c.lower()), None)
+            team_name_col = next((c for c in teams_df.columns if 'team' in c.lower()), None)
+            net_xg_col = next((c for c in teams_df.columns if 'net xg' in c.lower() or ('net' in c.lower() and 'xg' in c.lower())), None)
+
+            if cors_col and team_name_col:
+                st.markdown("### 📊 Joukkueiden Corsi% -vertailu (Kiekonhallinta)")
+                fig_corsi = px.bar(
+                    teams_df.sort_values(by=cors_col, ascending=True),
+                    x=cors_col, y=team_name_col,
+                    orientation='h',
+                    title="Corsi% by Team",
+                    labels={cors_col: 'Corsi %', team_name_col: 'Team'},
+                    text_auto=True,
+                    color=cors_col,
+                    color_continuous_scale='Blues'
+                )
+                fig_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                st.plotly_chart(fig_corsi, use_container_width=True)
+        else:
+            st.warning("Could not find 'Teams' sheet in the Excel file. Varmista, että Excel-tiedostossa on 'Teams'-niminen välilehti.")
 
     elif selected_tab == "📁 Raw Data":
         st.subheader("Raw Data and Calculated Game Score Values")
