@@ -139,7 +139,7 @@ if df is not None:
         (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
     )
 
-    # 2. Puolustajien kaava (kiristetty Net xG -paino)
+    # 2. Puolustajien kaava
     df.loc[mask_d, 'Game_Score'] = (
         (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
         (0.15 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
@@ -431,6 +431,13 @@ if df is not None:
         st.subheader("🛡️ Expected Goals Rates per 60 Minutes (xGF/60 & xGA/60)")
         st.caption("Puresetty xG erikseen hyökkäysvaikutukseen (xGF/60) ja puolustuspään vuotoon (xGA/60) suhteutettuna peliaikaan.")
 
+        # Lisätään suoraan tähän näkymään säätö minuutiointiajalle / peliajalle
+        col_r1, col_r2 = st.columns([2, 3])
+        with col_r1:
+            min_toi_rates = st.slider("Min. keskimääräinen peliaika per peli (min):", 0.0, 25.0, 12.0, 0.5, key="rates_toi_slider")
+        with col_r2:
+            min_games_rates = st.slider("Min. pelatut ottelut (GP):", 1, 10, 3, 1, key="rates_gp_slider")
+
         if player_col and col_toi:
             group_cols = [player_col]
             if team_col in df_filtered.columns:
@@ -441,12 +448,16 @@ if df is not None:
             rates_agg = df_filtered.groupby(group_cols).agg(
                 Games=('Game_Score', 'count'),
                 Total_TOI=('TOI_clean', 'sum'),
+                Avg_TOI=('TOI_clean', 'mean'),
                 Total_xGF=('xG_For_clean', 'sum'),
                 Total_xGA=('xG_Opp_clean', 'sum'),
                 Blocked_Shots=('Block_clean', 'sum')
             ).reset_index()
 
-            # Lasketaan per 60 min (jos TOI > 0)
+            # Suodatetaan pois vähän pelanneet ja vähälle peliajalle jääneet
+            rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
+
+            # Lasketaan per 60 min
             rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
@@ -462,11 +473,11 @@ if df is not None:
             rates_agg = rates_agg.sort_values(by="Net xG/60", ascending=False).reset_index(drop=True)
 
             st.dataframe(
-                rates_agg[['Player', 'Team', 'Position', 'Games', 'Total_TOI', 'xGF/60', 'xGA/60', 'Net xG/60', 'Blocked_Shots']],
+                rates_agg[['Player', 'Team', 'Position', 'Games', 'Avg_TOI', 'Total_TOI', 'xGF/60', 'xGA/60', 'Net xG/60', 'Blocked_Shots']],
                 use_container_width=True,
                 hide_index=True
             )
-            st.info("💡 **Vinkki:** `xGF/60` kertoo kuinka paljon maalipaikkoja pelaaja luo kentällä ollessaan per peliura-60min, ja `xGA/60` näyttää karun totuuden siitä, kuinka paljon omassa päässä soi. Pienempi `xGA/60` on puolustajalle kultaa!")
+            st.info("💡 **Vinkki:** Voit säätää yläpuolen liukusäätimillä minimipeliaikaa ja ottelumäärää, jotta listalle nousevat vain vakiokokoonpanon pelaajat.")
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
