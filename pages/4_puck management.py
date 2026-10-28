@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="Puck Management & Transitions", page_icon="🏒", layout="wide")
 
 st.title("🏒 Puck Management, Transitions, xG & Forward Lines")
-st.caption("Clean puck management, turnovers, zone entries, team xG performance, and 5v5 forward line chemistry.")
+st.caption("Clean puck management, turnovers, zone entries, team xG performance, and 5v5 forward line chemistry & WOWY analysis.")
 
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
@@ -127,7 +127,7 @@ if df_puck is not None:
 
     # Forward Lines specific sidebar filter for minimum TOI
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🧬 Forward Lines Settings")
+    st.sidebar.subheader("🧬 Forward Lines & WOWY Settings")
     min_toi_minutes = st.sidebar.slider("Min. 5v5 Ice Time (Minutes):", min_value=0.0, max_value=20.0, value=3.0, step=0.5)
 
     # --- MAIN TABS ---
@@ -135,7 +135,7 @@ if df_puck is not None:
         "🛡️ Team Analytics", 
         "👥 Player Statistics", 
         "📊 Expected Goals (xG) Analytics",
-        "🧬 Forward Lines (5v5)"
+        "🧬 Forward Lines & WOWY (5v5)"
     ])
 
     # ---------------------------------------------------------
@@ -336,11 +336,11 @@ if df_puck is not None:
             st.info("Game log sheet could not be loaded for xG aggregation.")
 
     # ---------------------------------------------------------
-    # TAB 4: FORWARD LINES & CHEMISTRY (5v5)
+    # TAB 4: FORWARD LINES & WOWY (5v5)
     # ---------------------------------------------------------
     with tab_lines:
-        st.subheader("🧬 5v5 Forward Line Chemistry & Per-60 Efficiency (Luleå)")
-        st.caption(f"Normalized 5v5 forward line performance scaled per 60 minutes (Filtered for lines with > {min_toi_minutes} min TOI).")
+        st.subheader("🧬 5v5 Forward Line Chemistry & WOWY Analysis (Luleå)")
+        st.caption(f"With-Or-Without-You (WOWY) 5v5 performance analysis (Filtered for lines with > {min_toi_minutes} min TOI).")
 
         if df_lines is not None:
             line_team_col = next((c for c in df_lines.columns if 'team' in c.lower()), 'Team')
@@ -377,6 +377,7 @@ if df_puck is not None:
 
                     corsi_col = next((c for c in df_lulea_filtered.columns if c.upper() == 'CORSI'), None)
                     goals_col = next((c for c in df_lulea_filtered.columns if c.lower() == 'goals'), None)
+                    opp_goals_col = next((c for c in df_lulea_filtered.columns if 'opponent' in c.lower() and 'goal' in c.lower()), None)
 
                     if corsi_col:
                         df_lulea_filtered['Corsi_num'] = pd.to_numeric(df_lulea_filtered[corsi_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
@@ -386,8 +387,11 @@ if df_puck is not None:
                         df_lulea_filtered['Goals_num'] = pd.to_numeric(df_lulea_filtered[goals_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
                         df_lulea_filtered['Goals_per_60'] = df_lulea_filtered['Goals_num'] * per_60_factor
 
-                    df_lulea_filtered = df_lulea_filtered.sort_values(by='TOI_sec', ascending=False)
+                    if opp_goals_col:
+                        df_lulea_filtered['Opp_Goals_num'] = pd.to_numeric(df_lulea_filtered[opp_goals_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
+                        df_lulea_filtered['Opp_Goals_per_60'] = df_lulea_filtered['Opp_Goals_num'] * per_60_factor
 
+                    # --- STANDARD FORWARD LINE CHARTS ---
                     col_l1, col_l2 = st.columns(2)
 
                     with col_l1:
@@ -418,6 +422,70 @@ if df_puck is not None:
                             )
                             fig_corsi_p60.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig_corsi_p60, use_container_width=True)
+
+                    # --- WOWY ANALYSIS SECTION ---
+                    st.markdown("---")
+                    st.subheader("📊 Player WOWY (With Or Without You) Analysis")
+                    st.caption("Extracts individual players from lines and compares team performance when the player is on ice vs. off ice.")
+
+                    # Extract unique players from the line strings (assuming comma-separated or similar format)
+                    all_line_strings = df_lulea_filtered[line_col].dropna().astype(str).tolist()
+                    unique_players = set()
+                    for l_str in all_line_strings:
+                        # Split by comma or bullet points if present
+                        parts = [p.strip() for p in l_str.replace('–', ',').split(',')]
+                        for p in parts:
+                            # Clean player name (remove numbers if formatted like '71 E. Hedqvist')
+                            cleaned_p = ''.join([ch for ch in p if not ch.isdigit()]).strip()
+                            if cleaned_p and len(cleaned_p) > 2:
+                                unique_players.add(cleaned_p)
+
+                    sorted_players = sorted(list(unique_players))
+
+                    if sorted_players:
+                        selected_player = st.selectbox("Select Player for WOWY Analysis:", sorted_players)
+
+                        if selected_player:
+                            # Filter lines containing the selected player
+                            with_player_df = df_lulea_filtered[df_lulea_filtered[line_col].str.contains(selected_player, case=False, na=False)]
+                            without_player_df = df_lulea_filtered[~df_lulea_filtered[line_col].str.contains(selected_player, case=False, na=False)]
+
+                            # Calculate weighted averages or sums per 60 for With vs Without
+                            def calc_wowy_metrics(sub_df):
+                                if sub_df.empty or sub_df['TOI_min'].sum() == 0:
+                                    return 0, 0, 0
+                                total_toi = sub_df['TOI_min'].sum()
+                                g_p60 = (sub_df['Goals_num'].sum() / total_toi) * 60 if 'Goals_num' in sub_df.columns else 0
+                                og_p60 = (sub_df['Opp_Goals_num'].sum() / total_toi) * 60 if 'Opp_Goals_num' in sub_df.columns else 0
+                                c_p60 = (sub_df['Corsi_num'].sum() / total_toi) * 60 if 'Corsi_num' in sub_df.columns else 0
+                                return g_p60, og_p60, c_p60
+
+                            wp_goals, wp_opp_goals, wp_corsi = calc_wowy_metrics(with_player_df)
+                            wop_goals, wop_opp_goals, wop_corsi = calc_wowy_metrics(without_player_df)
+
+                            wowy_data = pd.DataFrame([
+                                {"Condition": f"With {selected_player}", "Goals For / 60": wp_goals, "Goals Against / 60": wp_opp_goals, "Corsi / 60": wp_corsi},
+                                {"Condition": f"Without {selected_player}", "Goals For / 60": wop_goals, "Goals Against / 60": wop_opp_goals, "Corsi / 60": wop_corsi}
+                            ])
+
+                            col_w1, col_w2 = st.columns(2)
+                            with col_w1:
+                                fig_wowy_goals = px.bar(
+                                    wowy_data, x="Condition", y=["Goals For / 60", "Goals Against / 60"],
+                                    barmode="group", title=f"WOWY: Goals For vs Against / 60 for {selected_player}",
+                                    labels={'value': 'Per 60 Minutes', 'Condition': ''}
+                                )
+                                fig_wowy_goals.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                                st.plotly_chart(fig_wowy_goals, use_container_width=True)
+
+                            with col_w2:
+                                fig_wowy_corsi = px.bar(
+                                    wowy_data, x="Condition", y="Corsi / 60",
+                                    color="Condition", title=f"WOWY: Corsi / 60 Efficiency for {selected_player}",
+                                    labels={'Corsi / 60': 'Corsi / 60 min', 'Condition': ''}
+                                )
+                                fig_wowy_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                                st.plotly_chart(fig_wowy_corsi, use_container_width=True)
 
                     st.markdown("---")
                     st.subheader("📋 Luleå 5v5 Forward Lines (Filtered & Per-60 Metrics)")
