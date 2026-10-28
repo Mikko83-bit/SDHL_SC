@@ -119,32 +119,32 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # --- POSITIO-KOHTAISET GAME SCORE -KAAVAT ---
+    # --- TIUKEMMAT JA REHELLISEMMÄT POSITIO-KOHTAISET KAAVAT ---
     df['Game_Score'] = 0.0
     
     mask_f = df['Pos_clean'] == 'F'
     mask_d = df['Pos_clean'] == 'D'
     mask_other = ~(mask_f | mask_d)
 
-    # 1. Hyökkääjien kaava (enemmän painoa tehoille ja laukauksille)
+    # 1. Hyökkääjien kaava
     df.loc[mask_f, 'Game_Score'] = (
         (0.85 * g[mask_f]) + (0.75 * a_total[mask_f]) + (0.075 * sog[mask_f]) + 
         (0.05 * blk[mask_f]) + (0.15 * pd_val[mask_f]) - (0.15 * pt_val[mask_f]) + 
         (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
     )
 
-    # 2. Puolustajien kaava (enemmän painoarvoa bloteille ja Net xG -pelinhallinnalle)
+    # 2. Puolustajien KIRISTETTY kaava (Net xG -paino nostettu 0.45:een, jotta miinukset rokottavat oikeasti)
     df.loc[mask_d, 'Game_Score'] = (
         (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
-        (0.2 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
-        (0.25 * net_xg_val[mask_d])
+        (0.15 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
+        (0.45 * net_xg_val[mask_d])
     )
 
-    # 3. Varakaava muille (jos positio on tuntematon)
+    # 3. Varakaava muille
     df.loc[mask_other, 'Game_Score'] = (
         (0.75 * g[mask_other]) + (0.7 * a_total[mask_other]) + (0.075 * sog[mask_other]) + 
         (0.1 * blk[mask_other]) + (0.15 * pd_val[mask_other]) - (0.15 * pt_val[mask_other]) + 
-        (0.15 * net_xg_val[mask_other])
+        (0.2 * net_xg_val[mask_other])
     )
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
@@ -237,7 +237,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Leaderboard with Position-Specific Game Score Models (Forwards vs. Defenders).")
+        st.caption("Leaderboard with Strict, Defense-Punishing Net xG Weights.")
         
         if player_col:
             group_cols = [player_col]
@@ -495,7 +495,7 @@ if df is not None:
                     default=['DZ Win %', 'NZ Win %', 'OZ Win %']
                 )
 
-            filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=True)
+            filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=Year:=True)
 
             st.dataframe(
                 filtered_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Tot', 'DZ Win %', 'NZ Tot', 'NZ Win %', 'OZ Tot', 'OZ Win %']],
