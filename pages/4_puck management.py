@@ -5,8 +5,8 @@ import plotly.express as px
 # Page configuration
 st.set_page_config(page_title="Puck Management & Transitions", page_icon="🏒", layout="wide")
 
-st.title("🏒 Puck Management, Transitions & xG Analytics")
-st.caption("Clean puck management, turnovers, zone entries, transition statistics, and team xG performance.")
+st.title("🏒 Puck Management, Transitions, xG & Forward Lines")
+st.caption("Clean puck management, turnovers, zone entries, team xG performance, and 5v5 forward line chemistry.")
 
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
@@ -20,7 +20,6 @@ def normalize_team_name(name):
     if not cleaned or cleaned in ['-', '—', 'nan', 'NaN']:
         return "Unknown"
     
-    # Map variations to standard names
     if "LULEA" in upper_name:
         return "Lulea/MSSK"
     if "MODO" in upper_name:
@@ -59,26 +58,31 @@ def load_excel_sheet(file_path, sheet_name):
             return None
 
 df_puck = load_excel_sheet(EXCEL_FILE, 'Puck management')
+df_games = load_excel_sheet(EXCEL_FILE, pd.ExcelFile(EXCEL_FILE).sheet_names[0] if EXCEL_File_exists(EXCEL_FILE) else 'Game logs')
+
+# Helper for file checking
+def EXCEL_File_exists(path):
+    try:
+        pd.ExcelFile(path)
+        return True
+    except:
+        return False
 
 @st.cache_data
-def load_game_logs(file_path):
+def load_forward_lines(file_path):
     try:
-        xls = pd.ExcelFile(file_path)
-        first_sheet = xls.sheet_names[0]
-        df = pd.read_excel(file_path, sheet_name=first_sheet)
+        df = pd.read_excel(file_path, sheet_name='Forward lines')
         df.columns = [str(col).strip() for col in df.columns]
         return df
     except Exception:
         try:
-            xls = pd.ExcelFile(f"../{file_path}")
-            first_sheet = xls.sheet_names[0]
-            df = pd.read_excel(f"../{file_path}", sheet_name=first_sheet)
+            df = pd.read_excel(f"../{file_path}", sheet_name='Forward lines')
             df.columns = [str(col).strip() for col in df.columns]
             return df
         except Exception:
             return None
 
-df_games = load_game_logs(EXCEL_FILE)
+df_lines = load_forward_lines(EXCEL_FILE)
 
 if df_puck is not None:
     def get_col(data, col_name):
@@ -94,10 +98,7 @@ if df_puck is not None:
 
     df_puck['Player_clean'] = df_puck[player_col] if player_col in df_puck.columns else 'Unknown'
     df_puck['Team_clean'] = df_puck[team_col].apply(normalize_team_name) if team_col in df_puck.columns else 'Unknown'
-    
-    # Remove 'Unknown' teams from puck data
     df_puck = df_puck[df_puck['Team_clean'] != 'Unknown']
-
     df_puck['Pos_clean'] = df_puck[pos_col].astype(str).str.upper().str.strip() if pos_col in df_puck.columns else 'F'
 
     # --- SIDEBAR FILTERS ---
@@ -115,10 +116,11 @@ if df_puck is not None:
         df_filtered = df_filtered[df_filtered['Pos_clean'].isin(selected_positions)]
 
     # --- MAIN TABS ---
-    tab_team, tab_player, tab_xg = st.tabs([
+    tab_team, tab_player, tab_xg, tab_lines = st.tabs([
         "🛡️ Team Analytics", 
         "👥 Player Statistics", 
-        "📊 Expected Goals (xG) Analytics"
+        "📊 Expected Goals (xG) Analytics",
+        "🧬 Forward Lines (5v5)"
     ])
 
     # ---------------------------------------------------------
@@ -136,15 +138,12 @@ if df_puck is not None:
             for col in stat_cols:
                 df_filtered[col] = get_col(df_filtered, col)
 
-            # Aggregate sums by team
             team_agg = df_filtered.groupby('Team_clean')[stat_cols].sum().reset_index()
             team_agg = team_agg.rename(columns={'Team_clean': 'Team'})
 
-            # Calculate Net Takeaways
             if 'Takeaways' in team_agg.columns and 'Puck losses' in team_agg.columns:
                 team_agg['Net Takeaways'] = team_agg['Takeaways'] - team_agg['Puck losses']
 
-            # --- CHARTS ---
             col_g1, col_g2 = st.columns(2)
 
             with col_g1:
@@ -153,8 +152,7 @@ if df_puck is not None:
                     fig_tka = px.bar(
                         team_agg.sort_values(by='Takeaways', ascending=True),
                         y='Team', x=['Takeaways', 'Puck losses'],
-                        barmode='group',
-                        orientation='h',
+                        barmode='group', orientation='h',
                         title="Takeaways and Puck Losses by Team",
                         labels={'value': 'Count', 'variable': 'Metric', 'Team': 'Team'}
                     )
@@ -176,7 +174,6 @@ if df_puck is not None:
                     fig_net.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                     st.plotly_chart(fig_net, use_container_width=True)
 
-            # --- TOTAL ENTRIES & ENTRY STYLES ---
             entries_col = next((c for c in team_agg.columns if c.lower() == 'entries'), None)
             ent_pass_col = next((c for c in team_agg.columns if 'entries via pass' in c.lower()), None)
             ent_dump_col = next((c for c in team_agg.columns if 'entries via dump in' in c.lower()), None)
@@ -205,8 +202,7 @@ if df_puck is not None:
                     fig_entries_stack = px.bar(
                         team_agg.sort_values(by=entries_col if entries_col else team_agg.columns[1], ascending=True),
                         y='Team', x=[ent_pass_col, ent_dump_col, ent_stick_col],
-                        barmode='stack',
-                        orientation='h',
+                        barmode='stack', orientation='h',
                         title="Entry Styles (Pass, Dump-in, Stickhandling)",
                         labels={'value': 'Count', 'variable': 'Entry Type', 'Team': 'Team'}
                     )
@@ -267,7 +263,6 @@ if df_puck is not None:
             g_shots_col = next((c for c in df_games.columns if 'shots on goal' in c.lower()), None)
 
             if g_team_col and g_xg_col:
-                # Normalize team names and filter out Unknown
                 df_games['Team_clean_xg'] = df_games[g_team_col].apply(normalize_team_name)
                 df_games = df_games[df_games['Team_clean_xg'] != 'Unknown']
 
@@ -275,7 +270,6 @@ if df_puck is not None:
                 df_games['Goals_num'] = pd.to_numeric(df_games[g_goals_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_goals_col else 0
                 df_games['Shots_num'] = pd.to_numeric(df_games[g_shots_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if g_shots_col else 0
 
-                # Group by normalized team name across all game logs
                 team_xg_summary = df_games.groupby('Team_clean_xg').agg({
                     'xG_num': 'sum',
                     'Goals_num': 'sum',
@@ -289,7 +283,6 @@ if df_puck is not None:
                     'Shots_num': 'Shots on Goal'
                 })
 
-                # Calculate finishing efficiency
                 team_xg_summary['Finishing vs xG'] = team_xg_summary['Total Goals'] - team_xg_summary['Total xG']
                 team_xg_summary = team_xg_summary.sort_values(by='Total xG', ascending=True)
 
@@ -298,12 +291,9 @@ if df_puck is not None:
                 with col_xg1:
                     st.markdown("### 🎯 Total Expected Goals (xG) by Team")
                     fig_xg = px.bar(
-                        team_xg_summary,
-                        y='Team', x='Total xG',
-                        orientation='h',
-                        title="Cumulative Expected Goals (xG)",
-                        color='Total xG',
-                        color_continuous_scale='Teal'
+                        team_xg_summary, y='Team', x='Total xG',
+                        orientation='h', title="Cumulative Expected Goals (xG)",
+                        color='Total xG', color_continuous_scale='Teal'
                     )
                     fig_xg.update_traces(texttemplate='%{x:.2f}', textposition='inside')
                     fig_xg.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
@@ -314,10 +304,8 @@ if df_puck is not None:
                     fig_finish = px.bar(
                         team_xg_summary.sort_values(by='Finishing vs xG', ascending=True),
                         y='Team', x='Finishing vs xG',
-                        orientation='h',
-                        title="Finishing Differential (Positive = Outperforming xG)",
-                        color='Finishing vs xG',
-                        color_continuous_scale='RdYlGn'
+                        orientation='h', title="Finishing Differential (Positive = Outperforming xG)",
+                        color='Finishing vs xG', color_continuous_scale='RdYlGn'
                     )
                     fig_finish.update_traces(texttemplate='%{x:.2f}', textposition='inside')
                     fig_finish.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
@@ -331,6 +319,87 @@ if df_puck is not None:
                 st.warning("Required xG or Team columns were not found in the game log sheet.")
         else:
             st.info("Game log sheet could not be loaded for xG aggregation.")
+
+    # ---------------------------------------------------------
+    # TAB 4: FORWARD LINES & CHEMISTRY (5v5)
+    # ---------------------------------------------------------
+    with tab_lines:
+        st.subheader("🧬 5v5 Forward Line Chemistry & Performance (Luleå)")
+        st.caption("Analysis of 5v5 forward line combinations, ice time, goals, and Corsi ratings[cite: 5].")
+
+        if df_lines is not None:
+            # Filter Lulea lines safely
+            line_team_col = next((c for c in df_lines.columns if 'team' in c.lower()), 'Team')
+            line_col = next((c for c in df_lines.columns if 'line' in c.lower()), 'Line')
+            toi_col = next((c for c in df_lines.columns if 'time on ice' in c.lower()), 'Time on ice')
+
+            # Clean team names in lines data
+            df_lines['Team_clean'] = df_lines[line_team_col].apply(normalize_team_name) if line_team_col in df_lines.columns else 'Lulea/MSSK'
+            
+            # Filter specifically for Lulea/MSSK as seen in the source data
+            df_lulea_lines = df_lines[df_lines['Team_clean'] == 'Lulea/MSSK'].copy()
+
+            if not df_lulea_lines.empty:
+                # Helper to parse MM:SS or numeric TOI into total seconds for sorting
+                def toi_to_seconds(val):
+                    if pd.isna(val):
+                        return 0
+                    val_str = str(val).strip()
+                    if ':' in val_str:
+                        parts = val_str.split(':')
+                        try:
+                            return int(parts[0]) * 60 + int(parts[1])
+                        except:
+                            return 0
+                    try:
+                        return float(val_str) * 60
+                    except:
+                        return 0
+
+                df_lulea_lines['TOI_sec'] = df_lulea_lines[toi_col].apply(toi_to_seconds) if toi_col in df_lulea_lines.columns else 0
+                df_lulea_lines = df_lulea_lines.sort_values(by='TOI_sec', ascending=False)
+
+                # Top lines table & chart
+                col_l1, col_l2 = st.columns(2)
+
+                with col_l1:
+                    st.markdown("### ⏱️ Top 5v5 Forward Lines by Ice Time")
+                    top_toi_lines = df_lulea_lines.head(10).copy()
+                    fig_toi = px.bar(
+                        top_toi_lines.sort_values(by='TOI_sec', ascending=True),
+                        y=line_col, x='TOI_sec',
+                        orientation='h',
+                        title="Most Used 5v5 Forward Combinations",
+                        labels={'TOI_sec': 'Ice Time (Seconds)', line_col: 'Forward Line'},
+                        color='TOI_sec', color_continuous_scale='Blues'
+                    )
+                    fig_toi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                    st.plotly_chart(fig_toi, use_container_width=True)
+
+                with col_l2:
+                    st.markdown("### 📈 Corsi Rating by Forward Line")
+                    corsi_col = next((c for c in df_lulea_lines.columns if c.upper() == 'CORSI'), None)
+                    if corsi_col:
+                        df_lulea_lines['Corsi_num'] = pd.to_numeric(df_lulea_lines[corsi_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
+                        top_corsi = df_lulea_lines.sort_values(by='Corsi_num', ascending=True).tail(10)
+                        fig_corsi = px.bar(
+                            top_corsi,
+                            y=line_col, x='Corsi_num',
+                            orientation='h',
+                            title="Top 5v5 Corsi Differential by Line",
+                            labels={'Corsi_num': 'CORSI Differential', line_col: 'Forward Line'},
+                            color='Corsi_num', color_continuous_scale='Teal'
+                        )
+                        fig_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                        st.plotly_chart(fig_corsi, use_container_width=True)
+
+                st.markdown("---")
+                st.subheader("📋 Luleå 5v5 Forward Lines Complete Table")
+                st.dataframe(df_lulea_lines.drop(columns=['Team_clean', 'TOI_sec'], errors='ignore'), use_container_width=True, hide_index=True)
+            else:
+                st.warning("No 5v5 forward line data found for Lulea/MSSK.")
+        else:
+            st.info("The 'Forward lines' sheet could not be loaded from the Excel file.")
 
 else:
     st.warning("Failed to load Puck management data from Excel.")
