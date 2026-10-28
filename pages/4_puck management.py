@@ -10,6 +10,14 @@ st.caption("Clean puck management, turnovers, zone entries, team xG performance,
 
 EXCEL_FILE = "Sdhl Game score 2026-2027.xlsx"
 
+# Helper for file checking
+def excel_file_exists(path):
+    try:
+        pd.ExcelFile(path)
+        return True
+    except:
+        return False
+
 # Helper function to normalize team names across different sheets
 def normalize_team_name(name):
     if not isinstance(name, str):
@@ -58,15 +66,17 @@ def load_excel_sheet(file_path, sheet_name):
             return None
 
 df_puck = load_excel_sheet(EXCEL_FILE, 'Puck management')
-df_games = load_excel_sheet(EXCEL_FILE, pd.ExcelFile(EXCEL_FILE).sheet_names[0] if EXCEL_File_exists(EXCEL_FILE) else 'Game logs')
 
-# Helper for file checking
-def EXCEL_File_exists(path):
+# Load first sheet safely for game logs
+first_sheet_name = 'Game logs'
+if excel_file_exists(EXCEL_FILE):
     try:
-        pd.ExcelFile(path)
-        return True
+        xls_temp = pd.ExcelFile(EXCEL_FILE)
+        first_sheet_name = xls_temp.sheet_names[0]
     except:
-        return False
+        pass
+
+df_games = load_excel_sheet(EXCEL_FILE, first_sheet_name)
 
 @st.cache_data
 def load_forward_lines(file_path):
@@ -328,19 +338,14 @@ if df_puck is not None:
         st.caption("Analysis of 5v5 forward line combinations, ice time, goals, and Corsi ratings[cite: 5].")
 
         if df_lines is not None:
-            # Filter Lulea lines safely
             line_team_col = next((c for c in df_lines.columns if 'team' in c.lower()), 'Team')
             line_col = next((c for c in df_lines.columns if 'line' in c.lower()), 'Line')
             toi_col = next((c for c in df_lines.columns if 'time on ice' in c.lower()), 'Time on ice')
 
-            # Clean team names in lines data
             df_lines['Team_clean'] = df_lines[line_team_col].apply(normalize_team_name) if line_team_col in df_lines.columns else 'Lulea/MSSK'
-            
-            # Filter specifically for Lulea/MSSK as seen in the source data
             df_lulea_lines = df_lines[df_lines['Team_clean'] == 'Lulea/MSSK'].copy()
 
             if not df_lulea_lines.empty:
-                # Helper to parse MM:SS or numeric TOI into total seconds for sorting
                 def toi_to_seconds(val):
                     if pd.isna(val):
                         return 0
@@ -356,10 +361,9 @@ if df_puck is not None:
                     except:
                         return 0
 
-                df_lulea_lines['TOI_sec'] = df_lulea_lines[toi_col].apply(toi_to_seconds) if toi_col in df_lulea_lines.columns else 0
+                df_lulea_lines['TOI_sec'] = df_lulea_lines[toi_col].apply(toi_to_seconds) if toi_col in df_lines.columns else 0
                 df_lulea_lines = df_lulea_lines.sort_values(by='TOI_sec', ascending=False)
 
-                # Top lines table & chart
                 col_l1, col_l2 = st.columns(2)
 
                 with col_l1:
