@@ -133,7 +133,7 @@ if df is not None:
         (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
     )
 
-    # 2. Puolustajien KIRISTETTY kaava (Net xG -paino nostettu 0.45:een, jotta miinukset rokottavat oikeasti)
+    # 2. Puolustajien KIRISTETTY kaava (Net xG -paino nostettu 0.45:een)
     df.loc[mask_d, 'Game_Score'] = (
         (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
         (0.15 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
@@ -495,7 +495,7 @@ if df is not None:
                     default=['DZ Win %', 'NZ Win %', 'OZ Win %']
                 )
 
-            filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=Year:=True)
+            filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=True)
 
             st.dataframe(
                 filtered_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Tot', 'DZ Win %', 'NZ Tot', 'NZ Win %', 'OZ Tot', 'OZ Win %']],
