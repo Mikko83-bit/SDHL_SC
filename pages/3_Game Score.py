@@ -84,7 +84,9 @@ if df is not None:
     
     col_net_xg = next((c for c in df.columns if 'net xg' in c.lower()), None)
     col_xg_for = next((c for c in df.columns if 'xg with a player on' in c.lower() and 'opp' not in c.lower()), None)
-    col_xg_opp = next((c for c in df.columns if 'opp' in c.lower() and 'xg' in c.lower()), None)
+    
+    # Haetaan vastustajan xG varmasti oikein riippumatta siitä miten sarake on nimetty
+    col_xg_opp = next((c for c in df.columns if ('opp' in c.lower() or 'opponent' in c.lower()) and 'xg' in c.lower()), None)
 
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
     col_xg_ps = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
@@ -102,7 +104,9 @@ if df is not None:
     fol = get_col(df, col_fol)
     net_xg_val = get_col(df, col_net_xg)
     xg_for_val = get_col(df, col_xg_for)
-    xg_opp_val = get_col(df, col_xg_opp)
+    
+    # Pakotetaan vastustajan xG aina positiiviseksi arvolla abs()
+    xg_opp_val = get_col(df, col_xg_opp).abs()
 
     if col_xg_indiv:
         indiv_xg = get_col(df, col_xg_indiv)
@@ -431,7 +435,6 @@ if df is not None:
         st.subheader("🛡️ Expected Goals Rates per 60 Minutes (xGF/60 & xGA/60)")
         st.caption("Puresetty xG erikseen hyökkäysvaikutukseen (xGF/60) ja puolustuspään vuotoon (xGA/60) suhteutettuna peliaikaan.")
 
-        # Lisätään suoraan tähän näkymään säätö minuutiointiajalle / peliajalle
         col_r1, col_r2 = st.columns([2, 3])
         with col_r1:
             min_toi_rates = st.slider("Min. keskimääräinen peliaika per peli (min):", 0.0, 25.0, 12.0, 0.5, key="rates_toi_slider")
@@ -454,10 +457,10 @@ if df is not None:
                 Blocked_Shots=('Block_clean', 'sum')
             ).reset_index()
 
-            # Suodatetaan pois vähän pelanneet ja vähälle peliajalle jääneet
+            # Suodatetaan pois vähän pelanneet
             rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
 
-            # Lasketaan per 60 min
+            # Lasketaan per 60 min (xGA on nyt varmasti positiivinen luku)
             rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
@@ -477,7 +480,7 @@ if df is not None:
                 use_container_width=True,
                 hide_index=True
             )
-            st.info("💡 **Vinkki:** Voit säätää yläpuolen liukusäätimillä minimipeliaikaa ja ottelumäärää, jotta listalle nousevat vain vakiokokoonpanon pelaajat.")
+            st.info("💡 **Vinkki:** Nyt `xGA/60` näyttää oikein vastustajan luoman maaliodottaman positiivisena lukuna, ja `Net xG/60` laskee erotuksen puhtaasti oikein.")
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
