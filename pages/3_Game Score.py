@@ -84,12 +84,9 @@ if df is not None:
     col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
     col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
     
-    # Etsitään myös henkilökohtainen xG-sarake, jos sellainen löytyy datasta (tai käytetään xG per shot * SOG -kaavaa tarvittaessa)
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
     col_xg_ps = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
 
-    col_gf = next((c for c in df.columns if c.lower() in ['plus', 'gf']), None)
-    col_ga = next((c for c in df.columns if c.lower() in ['minus', 'ga']), None)
     col_toi = next((c for c in df.columns if any(k in c.lower() for k in ['time on ice', 'toi', 'minutes', 'min'])), None)
     col_pos = next((c for c in df.columns if c.lower() == 'position'), None)
 
@@ -103,10 +100,7 @@ if df is not None:
     fol = get_col(df, col_fol)
     xg_for = get_col(df, col_xg_on)
     xg_against = get_col(df, col_opp_xg_on)
-    gf = get_col(df, col_gf)
-    ga = get_col(df, col_ga)
 
-    # Lasketaan henkilökohtainen xG (jos erillistä saraketta ei ole, lasketaan SOG * xG per shot)
     if col_xg_indiv:
         indiv_xg = get_col(df, col_xg_indiv)
     elif col_xg_ps:
@@ -121,17 +115,17 @@ if df is not None:
     df['Penalties_Total_clean'] = pd_val - pt_val
     df['Faceoffs_Total_clean'] = fow - fol
     df['xG_Total_clean'] = xg_for - xg_against
-    df['Plus_Minus_clean'] = gf - ga
     df['Indiv_xG_clean'] = indiv_xg
     
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
+    # PÄIVITETTY GAME SCORE -KAAVA (Ilman plus/miinus-tilastoa, xG-painotusta nostettu)
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
-        (0.01 * fow) - (0.01 * fol) + (0.05 * xg_for) - 
-        (0.05 * xg_against) + (0.15 * gf) - (0.15 * ga)
+        (0.01 * fow) - (0.01 * fol) + (0.1 * xg_for) - 
+        (0.1 * xg_against)
     )
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
@@ -221,7 +215,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Click any player row in the table to open their player card.")
+        st.caption("Click any player row in the table to open their player card (xG-based model).")
         
         if player_col:
             group_cols = [player_col]
@@ -240,8 +234,7 @@ if df is not None:
                 'Blocked Shots': pd.NamedAgg(column='Block_clean', aggfunc='sum'),
                 'Penalties Total': pd.NamedAgg(column='Penalties_Total_clean', aggfunc='sum'),
                 'Faceoffs Total': pd.NamedAgg(column='Faceoffs_Total_clean', aggfunc='sum'),
-                'xG Total': pd.NamedAgg(column='xG_Total_clean', aggfunc='sum'),
-                'Plus/Minus Total': pd.NamedAgg(column='Plus_Minus_clean', aggfunc='sum')
+                'xG Net': pd.NamedAgg(column='xG_Total_clean', aggfunc='sum')
             }
             if col_toi:
                 agg_kwargs['Avg. Time on Ice (min)'] = pd.NamedAgg(column='TOI_clean', aggfunc='mean')
@@ -260,7 +253,7 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            for col in ['GS Average', 'GS Total', 'xG Total']:
+            for col in ['GS Average', 'GS Total', 'xG Net']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
 
