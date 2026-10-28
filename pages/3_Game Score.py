@@ -450,18 +450,14 @@ if df is not None:
 
             rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
 
-            # Pelaajan omat per 60 -lukemat
             rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
 
-            # Lasketaan joukkueen keskiarvot xGF/60 ja xGA/60 suhteen
             team_means = rates_agg.groupby(team_col)[['xGF/60', 'xGA/60']].transform('mean')
             rates_agg['Team_xGF/60'] = team_means['xGF/60']
             rates_agg['Team_xGA/60'] = team_means['xGA/60']
 
-            # Suhteelliset arvot (Rel = Pelaaja - Joukkueen keskiarvo)
-            # Hyökkäyksessä positiivinen on hyvä, puolustuksessa negatiivinen xGA on hyvä (vähemmän omassa päässä soi)
             rates_agg['Rel xGF/60'] = rates_agg['xGF/60'] - rates_agg['Team_xGF/60']
             rates_agg['Rel xGA/60'] = rates_agg['xGA/60'] - rates_agg['Team_xGA/60']
 
@@ -478,7 +474,24 @@ if df is not None:
                 use_container_width=True,
                 hide_index=True
             )
-            st.info("💡 **Rel xGF/60 & Rel xGA/60:** Positiivinen `Rel xGF/60` tarkoittaa, että pelaaja luo enemmän maalipaikkoja kuin joukkueensa keskiarvo. Puolustuspäässä negatiivinen `Rel xGA/60` tarkoittaa, että pelaaja pitää vastustajan poissa maalipaikoista tehokkaammin kuin joukkuetoverinsa keskimäärin.")
+
+            st.markdown("### 📊 Pelaajien suhteellinen xG-vaikutus (Rel xGF/60 vs. Rel xGA/60)")
+            st.caption("Oikea yläkulma = Parempi hyökkäysvaikutus ja puolustusvaikutus suhteessa omaan joukkueeseen.")
+
+            fig_scatter = px.scatter(
+                rates_agg,
+                x='Rel xGF/60',
+                y='Rel xGA/60',
+                color='Team',
+                hover_name='Player',
+                hover_data=['Position', 'Games', 'Net xG/60'],
+                title="Relative xG Impact: Offense vs Defense",
+                labels={'Rel xGF/60': 'Relative xGF/60 (Hyökkäysvaikutus)', 'Rel xGA/60': 'Relative xGA/60 (Puolustuspään vuoto)'}
+            )
+            fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
+            fig_scatter.add_vline(x=0, line_dash="dash", line_color="gray")
+            fig_scatter.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_scatter, use_container_width=True)
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
