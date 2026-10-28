@@ -528,8 +528,8 @@ if df is not None:
             st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
 
     elif selected_tab == "📋 Teams SDHL":
-        st.subheader("📋 SDHL Team-Level Analytics & Corsi")
-        st.caption("Joukkuekohtaiset tilastot: Corsi%, maalit, maalipaikat, aloitukset ja odotetut maalit (xG).")
+        st.subheader("📋 SDHL Team-Level Analytics & Corsi vs. xG")
+        st.caption("Vertaile joukkueiden kiekonhallintaa (Corsi%) ja maaliodottamaeroja (Net xG) rinnakkain.")
 
         if df_teams is not None:
             teams_df = df_teams.copy()
@@ -537,21 +537,39 @@ if df is not None:
 
             cors_col = next((c for c in teams_df.columns if 'corsi' in c.lower()), None)
             team_name_col = next((c for c in teams_df.columns if 'team' in c.lower()), None)
+            net_xg_col = next((c for c in teams_df.columns if 'net xg' in c.lower() or ('net' in c.lower() and 'xg' in c.lower())), None)
 
-            if cors_col and team_name_col:
-                st.markdown("### 📊 Joukkueiden Corsi% -vertailu (Kiekonhallinta)")
-                fig_corsi = px.bar(
-                    teams_df.sort_values(by=cors_col, ascending=True),
-                    x=cors_col, y=team_name_col,
-                    orientation='h',
-                    title="Corsi% by Team",
-                    labels={cors_col: 'Corsi %', team_name_col: 'Team'},
-                    text_auto=True,
-                    color=cors_col,
-                    color_continuous_scale='Blues'
-                )
-                fig_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
-                st.plotly_chart(fig_corsi, use_container_width=True)
+            col_g1, col_g2 = st.columns(2)
+
+            with col_g1:
+                if cors_col and team_name_col:
+                    st.markdown("### 📊 Corsi % (Kiekonhallinta)")
+                    fig_corsi = px.bar(
+                        teams_df.sort_values(by=cors_col, ascending=True),
+                        x=cors_col, y=team_name_col,
+                        orientation='h',
+                        labels={cors_col: 'Corsi %', team_name_col: 'Team'},
+                        text_auto=True,
+                        color=cors_col,
+                        color_continuous_scale='Blues'
+                    )
+                    fig_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=400)
+                    st.plotly_chart(fig_corsi, use_container_width=True)
+
+            with col_g2:
+                if net_xg_col and team_name_col:
+                    st.markdown("### 🎯 Net xG (Odotetut Maalit - Ero)")
+                    fig_xg = px.bar(
+                        teams_df.sort_values(by=net_xg_col, ascending=True),
+                        x=net_xg_col, y=team_name_col,
+                        orientation='h',
+                        labels={net_xg_col: 'Net xG', team_name_col: 'Team'},
+                        text_auto=True,
+                        color=net_xg_col,
+                        color_continuous_scale='Tealgrn'
+                    )
+                    fig_xg.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=400)
+                    st.plotly_chart(fig_xg, use_container_width=True)
         else:
             st.warning("Could not find 'Teams SDHL' sheet in the Excel file.")
 
