@@ -120,7 +120,7 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # PÄIVITETTY GAME SCORE -KAAVA (Ilman plus/miinus-tilastoa, xG-painotusta nostettu)
+    # Game Score -kaava (xG-pohjainen, ilman plus/miinusta)
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
@@ -170,16 +170,19 @@ if df is not None:
         team_val = p_df[team_col].iloc[0] if team_col else "SDHL"
         gp = len(p_df)
         total_toi = p_df['TOI_clean'].sum()
+        p_median = p_df['Game_Score'].median()
 
         st.markdown(f"### 🏒 {player_name} &nbsp;|&nbsp; <span style='color:gray; font-size:16px;'>{team_val} | SDHL 26/27 | {gp} GP | {int(total_toi)} min</span>", unsafe_allow_html=True)
         st.markdown("---")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("GAME SCORE (Avg)", f"{p_df['Game_Score'].mean():.2f}")
+            st.metric("GS AVERAGE", f"{p_df['Game_Score'].mean():.2f}")
         with col2:
-            st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
+            st.metric("GS MEDIAN (Base)", f"{p_median:.2f}")
         with col3:
+            st.metric("TOTAL GOALS", int(p_df['Goals_clean'].sum()))
+        with col4:
             st.metric("TOTAL ASSISTS", int(p_df['Assists_clean'].sum()))
 
         st.markdown("### 📈 Season Trend Charts")
@@ -215,7 +218,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Click any player row in the table to open their player card (xG-based model).")
+        st.caption("Leaderboard with Game Score Average and Median for baseline performance comparison.")
         
         if player_col:
             group_cols = [player_col]
@@ -227,6 +230,7 @@ if df is not None:
             agg_kwargs = {
                 'Games': pd.NamedAgg(column='Game_Score', aggfunc='count'),
                 'GS Average': pd.NamedAgg(column='Game_Score', aggfunc='mean'),
+                'GS Median': pd.NamedAgg(column='Game_Score', aggfunc='median'),
                 'GS Total': pd.NamedAgg(column='Game_Score', aggfunc='sum'),
                 'Goals': pd.NamedAgg(column='Goals_clean', aggfunc='sum'),
                 'Assists': pd.NamedAgg(column='Assists_clean', aggfunc='sum'),
@@ -253,7 +257,7 @@ if df is not None:
                 leaderboard = leaderboard[leaderboard['Avg. Time on Ice (min)'] >= min_toi_filter]
                 leaderboard['Avg. Time on Ice (min)'] = leaderboard['Avg. Time on Ice (min)'].round(2)
 
-            for col in ['GS Average', 'GS Total', 'xG Net']:
+            for col in ['GS Average', 'GS Median', 'GS Total', 'xG Net']:
                 if col in leaderboard.columns:
                     leaderboard[col] = leaderboard[col].round(2)
 
@@ -300,7 +304,7 @@ if df is not None:
                     st.plotly_chart(fig, use_container_width=True)
 
     elif selected_tab == "📈 Game-by-Game Scores":
-        st.subheader("📊 Player Game-by-Game Game Score vs Averages")
+        st.subheader("📊 Player Game-by-Game Game Score vs Baselines")
         if player_col:
             players = sorted(df_filtered[player_col].dropna().unique())
             selected_player_bar = st.selectbox("Select player for analysis:", players, key='bar_player')
@@ -313,15 +317,16 @@ if df is not None:
             
             if not player_df.empty:
                 player_oma_ka = player_df['Game_Score'].mean()
-                sdhl_ka = df_vertailu['Game_Score'].mean()
+                player_oma_median = player_df['Game_Score'].median()
+                sdhl_median = df_vertailu['Game_Score'].median()
                 
                 if team_col:
                     pelaajan_tiimi = player_df[team_col].iloc[0]
                     tiimi_df = df_vertailu[df_vertailu[team_col] == pelaajan_tiimi]
-                    tiimi_ka = tiimi_df['Game_Score'].mean() if not tiimi_df.empty else 0
+                    tiimi_median = tiimi_df['Game_Score'].median() if not tiimi_df.empty else 0
                     tiimi_nimi = pelaajan_tiimi
                 else:
-                    tiimi_ka = None
+                    tiimi_median = None
                     tiimi_nimi = "Team"
 
                 x_axis_col = 'Date_Str'
@@ -339,24 +344,26 @@ if df is not None:
                 fig_bar.update_layout(showlegend=False)
                 fig_bar.update_xaxes(categoryorder='array', categoryarray=category_order)
 
-                fig_bar.add_hline(y=sdhl_ka, line_dash="dash", line_color="#adb5bd", annotation_text=f"SDHL Average ({sdhl_ka:.2f})", annotation_position="bottom right", annotation_font_color="#adb5bd")
+                fig_bar.add_hline(y=sdhl_median, line_dash="dash", line_color="#adb5bd", annotation_text=f"SDHL Median ({sdhl_median:.2f})", annotation_position="bottom right", annotation_font_color="#adb5bd")
 
-                if team_col and not pd.isna(tiimi_ka):
-                    fig_bar.add_hline(y=tiimi_ka, line_dash="dot", line_color="#ffb703", annotation_text=f"{tiimi_nimi} Average ({tiimi_ka:.2f})", annotation_position="top right", annotation_font_color="#ffb703")
+                if team_col and not pd.isna(tiimi_median):
+                    fig_bar.add_hline(y=tiimi_median, line_dash="dot", line_color="#ffb703", annotation_text=f"{tiimi_nimi} Median ({tiimi_median:.2f})", annotation_position="top right", annotation_font_color="#ffb703")
 
-                fig_bar.add_hline(y=player_oma_ka, line_dash="solid", line_color="#ffffff", annotation_text=f"Player Average ({player_oma_ka:.2f})", annotation_position="bottom left", annotation_font_color="#ffffff")
+                fig_bar.add_hline(y=player_oma_median, line_dash="solid", line_color="#ffffff", annotation_text=f"Player Median ({player_oma_median:.2f})", annotation_position="bottom left", annotation_font_color="#ffffff")
 
                 fig_bar.update_layout(xaxis_type='category', yaxis_title="Game Score", xaxis_title="Game Date", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Player Average", f"{player_oma_ka:.2f}")
                 with col2:
-                    st.metric("SDHL Average (filtered)", f"{sdhl_ka:.2f}")
+                    st.metric("Player Median (Base)", f"{player_oma_median:.2f}")
                 with col3:
+                    st.metric("SDHL Median (filtered)", f"{sdhl_median:.2f}")
+                with col4:
                     if team_col:
-                        st.metric(f"{tiimi_nimi} Average (filtered)", f"{tiimi_ka:.2f}")
+                        st.metric(f"{tiimi_nimi} Median", f"{tiimi_median:.2f}")
 
     elif selected_tab == "🎯 Efficiency & Finishing":
         st.subheader("🎯 Player Finishing & Scoring Efficiency (Goals vs Expected Goals)")
@@ -491,7 +498,7 @@ if df is not None:
                     title="Faceoff Win Percentage by Filtered Zones",
                     labels={'Win %': 'Win %'}
                 )
-                fig_zone.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                fig_zone.update_layout(xaxis_type='xaxis', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_zone, use_container_width=True)
         else:
             st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
