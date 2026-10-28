@@ -425,8 +425,8 @@ if df is not None:
             )
 
     elif selected_tab == "🛡️ xG Rates (/60)":
-        st.subheader("🛡️ Expected Goals Rates per 60 Minutes (xGF/60 & xGA/60)")
-        st.caption("Puresetty xG erikseen hyökkäysvaikutukseen (xGF/60) ja puolustuspään vuotoon (xGA/60) suhteutettuna peliaikaan.")
+        st.subheader("🛡️ Expected Goals Rates per 60 Minutes & Relative to Team")
+        st.caption("Puresetty xG / 60 sekä suhteelliset arvot (Rel xGF/60 & Rel xGA/60) verrattuna oman joukkueen keskiarvoon.")
 
         col_r1, col_r2 = st.columns([2, 3])
         with col_r1:
@@ -434,10 +434,8 @@ if df is not None:
         with col_r2:
             min_games_rates = st.slider("Min. pelatut ottelut (GP):", 1, 10, 3, 1, key="rates_gp_slider")
 
-        if player_col and col_toi:
-            group_cols = [player_col]
-            if team_col in df_filtered.columns:
-                group_cols.append(team_col)
+        if player_col and col_toi and team_col:
+            group_cols = [player_col, team_col]
             if col_pos:
                 group_cols.append('Pos_clean')
 
@@ -452,13 +450,22 @@ if df is not None:
 
             rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
 
+            # Pelaajan omat per 60 -lukemat
             rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
             rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
 
-            rates_rename = {player_col: 'Player'}
-            if team_col in df_filtered.columns:
-                rates_rename[team_col] = 'Team'
+            # Lasketaan joukkueen keskiarvot xGF/60 ja xGA/60 suhteen
+            team_means = rates_agg.groupby(team_col)[['xGF/60', 'xGA/60']].transform('mean')
+            rates_agg['Team_xGF/60'] = team_means['xGF/60']
+            rates_agg['Team_xGA/60'] = team_means['xGA/60']
+
+            # Suhteelliset arvot (Rel = Pelaaja - Joukkueen keskiarvo)
+            # Hyökkäyksessä positiivinen on hyvä, puolustuksessa negatiivinen xGA on hyvä (vähemmän omassa päässä soi)
+            rates_agg['Rel xGF/60'] = rates_agg['xGF/60'] - rates_agg['Team_xGF/60']
+            rates_agg['Rel xGA/60'] = rates_agg['xGA/60'] - rates_agg['Team_xGA/60']
+
+            rates_rename = {player_col: 'Player', team_col: 'Team'}
             if col_pos:
                 rates_rename['Pos_clean'] = 'Position'
             rates_agg = rates_agg.rename(columns=rates_rename)
@@ -467,10 +474,11 @@ if df is not None:
             rates_agg = rates_agg.sort_values(by="Net xG/60", ascending=False).reset_index(drop=True)
 
             st.dataframe(
-                rates_agg[['Player', 'Team', 'Position', 'Games', 'Avg_TOI', 'Total_TOI', 'xGF/60', 'xGA/60', 'Net xG/60', 'Blocked_Shots']],
+                rates_agg[['Player', 'Team', 'Position', 'Games', 'xGF/60', 'Rel xGF/60', 'xGA/60', 'Rel xGA/60', 'Net xG/60', 'Blocked_Shots']],
                 use_container_width=True,
                 hide_index=True
             )
+            st.info("💡 **Rel xGF/60 & Rel xGA/60:** Positiivinen `Rel xGF/60` tarkoittaa, että pelaaja luo enemmän maalipaikkoja kuin joukkueensa keskiarvo. Puolustuspäässä negatiivinen `Rel xGA/60` tarkoittaa, että pelaaja pitää vastustajan poissa maalipaikoista tehokkaammin kuin joukkuetoverinsa keskimäärin.")
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
