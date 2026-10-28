@@ -125,6 +125,11 @@ if df_puck is not None:
     if pos_col in df_puck.columns:
         df_filtered = df_filtered[df_filtered['Pos_clean'].isin(selected_positions)]
 
+    # Forward Lines specific sidebar filter for minimum TOI
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🧬 Forward Lines Settings")
+    min_toi_minutes = st.sidebar.slider("Min. 5v5 Ice Time (Minutes):", min_value=0.0, max_value=20.0, value=3.0, step=0.5)
+
     # --- MAIN TABS ---
     tab_team, tab_player, tab_xg, tab_lines = st.tabs([
         "🛡️ Team Analytics", 
@@ -335,7 +340,7 @@ if df_puck is not None:
     # ---------------------------------------------------------
     with tab_lines:
         st.subheader("🧬 5v5 Forward Line Chemistry & Per-60 Efficiency (Luleå)")
-        st.caption("Normalized 5v5 forward line performance scaled per 60 minutes of ice time.")
+        st.caption(f"Normalized 5v5 forward line performance scaled per 60 minutes (Filtered for lines with > {min_toi_minutes} min TOI).")
 
         if df_lines is not None:
             line_team_col = next((c for c in df_lines.columns if 'team' in c.lower()), 'Team')
@@ -351,9 +356,7 @@ if df_puck is not None:
                         return 0
                     val_str = str(val).strip()
                     if ':' in val_str:
-                        parts = val_str.split('-' if '-' in val_str else ':') # handle formatting safely
                         try:
-                            # standard MM:SS
                             subparts = val_str.split(':')
                             return int(subparts[0]) * 60 + int(subparts[1])
                         except:
@@ -364,62 +367,64 @@ if df_puck is not None:
                         return 0
 
                 df_lulea_lines['TOI_sec'] = df_lulea_lines[toi_col].apply(toi_to_seconds) if toi_col in df_lines.columns else 0
-                
-                # Filter out rows with negligible ice time (e.g., less than 30 seconds) for clean per-60 stats
-                df_lulea_lines = df_lulea_lines[df_lulea_lines['TOI_sec'] > 30].copy()
-
-                # Calculate Per-60 multipliers (TOI in minutes -> multiply by 60 / TOI_minutes)
                 df_lulea_lines['TOI_min'] = df_lulea_lines['TOI_sec'] / 60.0
-                per_60_factor = 60.0 / df_lulea_lines['TOI_min']
 
-                corsi_col = next((c for c in df_lulea_lines.columns if c.upper() == 'CORSI'), None)
-                goals_col = next((c for c in df_lulea_lines.columns if c.lower() == 'goals'), None)
+                # Apply sidebar minimum TOI filter
+                df_lulea_filtered = df_lulea_lines[df_lulea_lines['TOI_min'] >= min_toi_minutes].copy()
 
-                if corsi_col:
-                    df_lulea_lines['Corsi_num'] = pd.to_numeric(df_lulea_lines[corsi_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
-                    df_lulea_lines['Corsi_per_60'] = df_lulea_lines['Corsi_num'] * per_60_factor
+                if not df_lulea_filtered.empty:
+                    per_60_factor = 60.0 / df_lulea_filtered['TOI_min']
 
-                if goals_col:
-                    df_lulea_lines['Goals_num'] = pd.to_numeric(df_lulea_lines[goals_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
-                    df_lulea_lines['Goals_per_60'] = df_lulea_lines['Goals_num'] * per_60_factor
+                    corsi_col = next((c for c in df_lulea_filtered.columns if c.upper() == 'CORSI'), None)
+                    goals_col = next((c for c in df_lulea_filtered.columns if c.lower() == 'goals'), None)
 
-                df_lulea_lines = df_lulea_lines.sort_values(by='TOI_sec', ascending=False)
-
-                col_l1, col_l2 = st.columns(2)
-
-                with col_l1:
-                    st.markdown("### ⏱️ Top 5v5 Forward Lines by Ice Time")
-                    top_toi_lines = df_lulea_lines.head(10).copy()
-                    fig_toi = px.bar(
-                        top_toi_lines.sort_values(by='TOI_sec', ascending=True),
-                        y=line_col, x='TOI_sec',
-                        orientation='h',
-                        title="Most Used 5v5 Forward Combinations",
-                        labels={'TOI_sec': 'Ice Time (Seconds)', line_col: 'Forward Line'},
-                        color='TOI_sec', color_continuous_scale='Blues'
-                    )
-                    fig_toi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
-                    st.plotly_chart(fig_toi, use_container_width=True)
-
-                with col_l2:
                     if corsi_col:
-                        st.markdown("### 🚀 Corsi Differential per 60 Minutes")
-                        top_corsi_p60 = df_lulea_lines.sort_values(by='Corsi_per_60', ascending=True).tail(10)
-                        fig_corsi_p60 = px.bar(
-                            top_corsi_p60,
-                            y=line_col, x='Corsi_per_60',
-                            orientation='h',
-                            title="Normalized 5v5 Corsi / 60 Min (Efficiency)",
-                            labels={'Corsi_per_60': 'CORSI / 60 min', line_col: 'Forward Line'},
-                            color='Corsi_per_60', color_continuous_scale='Teal'
-                        )
-                        fig_corsi_p60.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
-                        st.plotly_chart(fig_corsi_p60, use_container_width=True)
+                        df_lulea_filtered['Corsi_num'] = pd.to_numeric(df_lulea_filtered[corsi_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
+                        df_lulea_filtered['Corsi_per_60'] = df_lulea_filtered['Corsi_num'] * per_60_factor
 
-                st.markdown("---")
-                st.subheader("📋 Luleå 5v5 Forward Lines (Per-60 Metrics Included)")
-                display_line_cols = [c for c in df_lulea_lines.columns if c not in ['Team_clean', 'TOI_sec', 'TOI_min']]
-                st.dataframe(df_lulea_lines[display_line_cols], use_container_width=True, hide_index=True)
+                    if goals_col:
+                        df_lulea_filtered['Goals_num'] = pd.to_numeric(df_lulea_filtered[goals_col].replace(['-', '—'], 0), errors='coerce').fillna(0)
+                        df_lulea_filtered['Goals_per_60'] = df_lulea_filtered['Goals_num'] * per_60_factor
+
+                    df_lulea_filtered = df_lulea_filtered.sort_values(by='TOI_sec', ascending=False)
+
+                    col_l1, col_l2 = st.columns(2)
+
+                    with col_l1:
+                        st.markdown("### ⏱️ Top 5v5 Forward Lines by Ice Time")
+                        top_toi_lines = df_lulea_filtered.head(10).copy()
+                        fig_toi = px.bar(
+                            top_toi_lines.sort_values(by='TOI_sec', ascending=True),
+                            y=line_col, x='TOI_sec',
+                            orientation='h',
+                            title="Most Used 5v5 Forward Combinations",
+                            labels={'TOI_sec': 'Ice Time (Seconds)', line_col: 'Forward Line'},
+                            color='TOI_sec', color_continuous_scale='Blues'
+                        )
+                        fig_toi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                        st.plotly_chart(fig_toi, use_container_width=True)
+
+                    with col_l2:
+                        if corsi_col:
+                            st.markdown("### 🚀 Corsi Differential per 60 Minutes")
+                            top_corsi_p60 = df_lulea_filtered.sort_values(by='Corsi_per_60', ascending=True).tail(10)
+                            fig_corsi_p60 = px.bar(
+                                top_corsi_p60,
+                                y=line_col, x='Corsi_per_60',
+                                orientation='h',
+                                title=f"Normalized 5v5 Corsi / 60 Min (> {min_toi_minutes} min)",
+                                labels={'Corsi_per_60': 'CORSI / 60 min', line_col: 'Forward Line'},
+                                color='Corsi_per_60', color_continuous_scale='Teal'
+                            )
+                            fig_corsi_p60.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                            st.plotly_chart(fig_corsi_p60, use_container_width=True)
+
+                    st.markdown("---")
+                    st.subheader("📋 Luleå 5v5 Forward Lines (Filtered & Per-60 Metrics)")
+                    display_line_cols = [c for c in df_lulea_filtered.columns if c not in ['Team_clean', 'TOI_sec', 'TOI_min']]
+                    st.dataframe(df_lulea_filtered[display_line_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"Ei löytynyt ketjuja, joilla olisi vähintään {min_toi_minutes} minuuttia peliaikaa. Kokeile pienentää rajaa sivupalkista.")
             else:
                 st.warning("No 5v5 forward line data found for Lulea/MSSK.")
         else:
