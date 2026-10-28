@@ -81,9 +81,10 @@ if df is not None:
 
     col_fow = next((c for c in df.columns if 'faceoffs won' in c.lower() or c.lower() == 'fow'), None)
     col_fol = next((c for c in df.columns if 'faceoffs lost' in c.lower() or c.lower() == 'fol'), None)
-    col_xg_on = next((c for c in df.columns if c.lower() in ['xgs with a player on', 'xg with a player on']), None)
-    col_opp_xg_on = next((c for c in df.columns if 'opponent' in c.lower() and 'xg' in c.lower()), None)
     
+    # Haetaan InStatin valmis Net xG -sarake suoraan otsikosta
+    col_net_xg = next((c for c in df.columns if 'net xg' in c.lower()), None)
+
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
     col_xg_ps = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
 
@@ -98,8 +99,7 @@ if df is not None:
     pt_val = get_col(df, col_pt)
     fow = get_col(df, col_fow)
     fol = get_col(df, col_fol)
-    xg_for = get_col(df, col_xg_on)
-    xg_against = get_col(df, col_opp_xg_on)
+    net_xg_val = get_col(df, col_net_xg)
 
     if col_xg_indiv:
         indiv_xg = get_col(df, col_xg_indiv)
@@ -114,18 +114,17 @@ if df is not None:
     df['Block_clean'] = blk
     df['Penalties_Total_clean'] = pd_val - pt_val
     df['Faceoffs_Total_clean'] = fow - fol
-    df['xG_Total_clean'] = xg_for - xg_against
+    df['xG_Total_clean'] = net_xg_val
     df['Indiv_xG_clean'] = indiv_xg
     
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # Game Score -kaava (xG-pohjainen, ilman plus/miinusta)
+    # PÄIVITETTY GAME SCORE -KAAVA (Käyttää InStatin valmista Net xG -arvoa)
     df['Game_Score'] = (
         (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
         (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
-        (0.01 * fow) - (0.01 * fol) + (0.1 * xg_for) - 
-        (0.1 * xg_against)
+        (0.01 * fow) - (0.01 * fol) + (0.1 * net_xg_val)
     )
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
@@ -498,7 +497,7 @@ if df is not None:
                     title="Faceoff Win Percentage by Filtered Zones",
                     labels={'Win %': 'Win %'}
                 )
-                fig_zone.update_layout(xaxis_type='xaxis', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                fig_zone.update_layout(xaxis_type='category', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_zone, use_container_width=True)
         else:
             st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
