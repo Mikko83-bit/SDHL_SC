@@ -82,7 +82,6 @@ if df is not None:
     col_fow = next((c for c in df.columns if 'faceoffs won' in c.lower() or c.lower() == 'fow'), None)
     col_fol = next((c for c in df.columns if 'faceoffs lost' in c.lower() or c.lower() == 'fol'), None)
     
-    # Haetaan InStatin valmis Net xG -sarake suoraan otsikosta
     col_net_xg = next((c for c in df.columns if 'net xg' in c.lower()), None)
 
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
@@ -120,11 +119,32 @@ if df is not None:
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # PÄIVITETTY GAME SCORE -KAAVA (Käyttää InStatin valmista Net xG -arvoa)
-    df['Game_Score'] = (
-        (0.75 * g) + (0.7 * a_total) + (0.075 * sog) + 
-        (0.05 * blk) + (0.15 * pd_val) - (0.15 * pt_val) + 
-        (0.01 * fow) - (0.01 * fol) + (0.1 * net_xg_val)
+    # --- POSITIO-KOHTAISET GAME SCORE -KAAVAT ---
+    df['Game_Score'] = 0.0
+    
+    mask_f = df['Pos_clean'] == 'F'
+    mask_d = df['Pos_clean'] == 'D'
+    mask_other = ~(mask_f | mask_d)
+
+    # 1. Hyökkääjien kaava (enemmän painoa tehoille ja laukauksille)
+    df.loc[mask_f, 'Game_Score'] = (
+        (0.85 * g[mask_f]) + (0.75 * a_total[mask_f]) + (0.075 * sog[mask_f]) + 
+        (0.05 * blk[mask_f]) + (0.15 * pd_val[mask_f]) - (0.15 * pt_val[mask_f]) + 
+        (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
+    )
+
+    # 2. Puolustajien kaava (enemmän painoarvoa bloteille ja Net xG -pelinhallinnalle)
+    df.loc[mask_d, 'Game_Score'] = (
+        (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
+        (0.2 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
+        (0.25 * net_xg_val[mask_d])
+    )
+
+    # 3. Varakaava muille (jos positio on tuntematon)
+    df.loc[mask_other, 'Game_Score'] = (
+        (0.75 * g[mask_other]) + (0.7 * a_total[mask_other]) + (0.075 * sog[mask_other]) + 
+        (0.1 * blk[mask_other]) + (0.15 * pd_val[mask_other]) - (0.15 * pt_val[mask_other]) + 
+        (0.15 * net_xg_val[mask_other])
     )
 
     player_col = next((c for c in df.columns if 'player' in c.lower()), None)
@@ -217,7 +237,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Leaderboard with Game Score Average and Median for baseline performance comparison.")
+        st.caption("Leaderboard with Position-Specific Game Score Models (Forwards vs. Defenders).")
         
         if player_col:
             group_cols = [player_col]
