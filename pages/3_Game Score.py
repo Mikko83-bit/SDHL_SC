@@ -83,6 +83,8 @@ if df is not None:
     col_fol = next((c for c in df.columns if 'faceoffs lost' in c.lower() or c.lower() == 'fol'), None)
     
     col_net_xg = next((c for c in df.columns if 'net xg' in c.lower()), None)
+    col_xg_for = next((c for c in df.columns if 'xg with a player on' in c.lower() and 'opp' not in c.lower()), None)
+    col_xg_opp = next((c for c in df.columns if 'opp' in c.lower() and 'xg' in c.lower()), None)
 
     col_xg_indiv = next((c for c in df.columns if c.lower() in ['xg (expected goals)', 'xg', 'expected goals'] and 'on' not in c.lower()), None)
     col_xg_ps = next((c for c in df.columns if 'xg per shot' in c.lower()), None)
@@ -99,6 +101,8 @@ if df is not None:
     fow = get_col(df, col_fow)
     fol = get_col(df, col_fol)
     net_xg_val = get_col(df, col_net_xg)
+    xg_for_val = get_col(df, col_xg_for)
+    xg_opp_val = get_col(df, col_xg_opp)
 
     if col_xg_indiv:
         indiv_xg = get_col(df, col_xg_indiv)
@@ -114,12 +118,14 @@ if df is not None:
     df['Penalties_Total_clean'] = pd_val - pt_val
     df['Faceoffs_Total_clean'] = fow - fol
     df['xG_Total_clean'] = net_xg_val
+    df['xG_For_clean'] = xg_for_val
+    df['xG_Opp_clean'] = xg_opp_val
     df['Indiv_xG_clean'] = indiv_xg
     
     df['TOI_clean'] = df[col_toi].apply(parse_toi) if col_toi else 0.0
     df['Pos_clean'] = df[col_pos].astype(str).str.upper().str.strip() if col_pos else 'UNKNOWN'
 
-    # --- TIUKEMMAT JA REHELLISEMMÄT POSITIO-KOHTAISET KAAVAT ---
+    # --- POSITIO-KOHTAISET GAME SCORE -KAAVAT ---
     df['Game_Score'] = 0.0
     
     mask_f = df['Pos_clean'] == 'F'
@@ -133,7 +139,7 @@ if df is not None:
         (0.01 * fow[mask_f]) - (0.01 * fol[mask_f]) + (0.1 * net_xg_val[mask_f])
     )
 
-    # 2. Puolustajien KIRISTETTY kaava (Net xG -paino nostettu 0.45:een)
+    # 2. Puolustajien kaava (kiristetty Net xG -paino)
     df.loc[mask_d, 'Game_Score'] = (
         (0.9 * g[mask_d]) + (0.75 * a_total[mask_d]) + (0.05 * sog[mask_d]) + 
         (0.15 * blk[mask_d]) + (0.1 * pd_val[mask_d]) - (0.1 * pt_val[mask_d]) + 
@@ -227,6 +233,7 @@ if df is not None:
             "📊 Player Progression", 
             "📈 Game-by-Game Scores", 
             "🎯 Efficiency & Finishing",
+            "🛡️ xG Rates (/60)",
             "🏒 Faceoffs by Zone",
             "📁 Raw Data"
         ],
@@ -237,7 +244,7 @@ if df is not None:
 
     if selected_tab == "🏆 Season Leaderboard":
         st.subheader("🏆 Player Leaderboard & Game Score Components")
-        st.caption("Leaderboard with Strict, Defense-Punishing Net xG Weights.")
+        st.caption("Leaderboard with Game Score Average and Median for baseline performance comparison.")
         
         if player_col:
             group_cols = [player_col]
@@ -420,39 +427,58 @@ if df is not None:
                 hide_index=True
             )
 
-            st.markdown("### 📊 Top Finishers: Goals vs Expected Goals (xG)")
-            top_eff = eff_agg.head(15)
-            if not top_eff.empty:
-                melted_eff = top_eff.melt(
-                    id_vars=['Player'],
-                    value_vars=['Goals', 'Expected_Goals'],
-                    var_name='Metric', value_name='Count'
-                )
-                fig_eff = px.bar(
-                    melted_eff, x='Player', y='Count', color='Metric',
-                    barmode='group',
-                    title="Top 15 Finishers: Goals vs Expected Goals Comparison",
-                    color_discrete_map={'Goals': '#00b4d8', 'Expected_Goals': '#f77f00'}
-                )
-                fig_eff.update_layout(xaxis_tickangle=-45, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_eff, use_container_width=True)
+    elif selected_tab == "🛡️ xG Rates (/60)":
+        st.subheader("🛡️ Expected Goals Rates per 60 Minutes (xGF/60 & xGA/60)")
+        st.caption("Puresetty xG erikseen hyökkäysvaikutukseen (xGF/60) ja puolustuspään vuotoon (xGA/60) suhteutettuna peliaikaan.")
+
+        if player_col and col_toi:
+            group_cols = [player_col]
+            if team_col in df_filtered.columns:
+                group_cols.append(team_col)
+            if col_pos:
+                group_cols.append('Pos_clean')
+
+            rates_agg = df_filtered.groupby(group_cols).agg(
+                Games=('Game_Score', 'count'),
+                Total_TOI=('TOI_clean', 'sum'),
+                Total_xGF=('xG_For_clean', 'sum'),
+                Total_xGA=('xG_Opp_clean', 'sum'),
+                Blocked_Shots=('Block_clean', 'sum')
+            ).reset_index()
+
+            # Lasketaan per 60 min (jos TOI > 0)
+            rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
+            rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
+            rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
+
+            rates_rename = {player_col: 'Player'}
+            if team_col in df_filtered.columns:
+                rates_rename[team_col] = 'Team'
+            if col_pos:
+                rates_rename['Pos_clean'] = 'Position'
+            rates_agg = rates_agg.rename(columns=rates_rename)
+
+            rates_agg = rates_agg.round(2)
+            rates_agg = rates_agg.sort_values(by="Net xG/60", ascending=False).reset_index(drop=True)
+
+            st.dataframe(
+                rates_agg[['Player', 'Team', 'Position', 'Games', 'Total_TOI', 'xGF/60', 'xGA/60', 'Net xG/60', 'Blocked_Shots']],
+                use_container_width=True,
+                hide_index=True
+            )
+            st.info("💡 **Vinkki:** `xGF/60` kertoo kuinka paljon maalipaikkoja pelaaja luo kentällä ollessaan per peliura-60min, ja `xGA/60` näyttää karun totuuden siitä, kuinka paljon omassa päässä soi. Pienempi `xGA/60` on puolustajalle kultaa!")
 
     elif selected_tab == "🏒 Faceoffs by Zone":
         st.subheader("🏒 Faceoff Circle Analytics by Zone")
-        st.caption("Detailed breakdown of faceoffs in Defense Zone (DZ), Neutral Zone (NZ), and Attack Zone (OZ).")
-
         if df_faceoffs is not None:
             fo_df = df_faceoffs.copy()
-            
             fo_player_col = next((c for c in fo_df.columns if 'player' in c.lower()), 'Player')
             fo_team_col = next((c for c in fo_df.columns if 'team' in c.lower()), 'Team')
             
             col_dz_tot = next((c for c in fo_df.columns if 'dz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
             col_dz_won = next((c for c in fo_df.columns if 'dz' in c.lower() and 'won' in c.lower()), None)
-            
             col_nz_tot = next((c for c in fo_df.columns if 'nz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
             col_nz_won = next((c for c in fo_df.columns if 'nz' in c.lower() and 'won' in c.lower()), None)
-            
             col_oz_tot = next((c for c in fo_df.columns if 'oz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
             col_oz_won = next((c for c in fo_df.columns if 'oz' in c.lower() and 'won' in c.lower()), None)
 
@@ -466,59 +492,13 @@ if df is not None:
             processed_fo = pd.DataFrame()
             processed_fo['Player'] = fo_df[fo_player_col] if fo_player_col in fo_df.columns else "Unknown"
             processed_fo['Team'] = fo_df[fo_team_col] if fo_team_col in fo_df.columns else "Unknown"
-            
-            processed_fo['DZ Tot'] = dz_tot
-            processed_fo['DZ Won'] = dz_won
             processed_fo['DZ Win %'] = ((dz_won / dz_tot.replace(0, 1)) * 100).round(1)
-
-            processed_fo['NZ Tot'] = nz_tot
-            processed_fo['NZ Won'] = nz_won
             processed_fo['NZ Win %'] = ((nz_won / nz_tot.replace(0, 1)) * 100).round(1)
-
-            processed_fo['OZ Tot'] = oz_tot
-            processed_fo['OZ Won'] = oz_won
             processed_fo['OZ Win %'] = ((oz_won / oz_tot.replace(0, 1)) * 100).round(1)
+            processed_fo['Total Faceoffs'] = dz_tot + nz_tot + oz_tot
+            processed_fo['Total Win %'] = (((dz_won + nz_won + oz_won) / processed_fo['Total Faceoffs'].replace(0, 1)) * 100).round(1)
 
-            total_faceoffs = dz_tot + nz_tot + oz_tot
-            total_wins = dz_won + nz_won + oz_won
-            processed_fo['Total Faceoffs'] = total_faceoffs
-            processed_fo['Total Wins'] = total_wins
-            processed_fo['Total Win %'] = ((total_wins / total_faceoffs.replace(0, 1)) * 100).round(1)
-
-            col_f1, col_f2 = st.columns([2, 2])
-            with col_f1:
-                min_fo_zone = st.slider("Min. total faceoffs:", 0, 100, 10, 1, key='slider_fo_zone')
-            with col_f2:
-                selected_zones = st.multiselect(
-                    "Select zones to display in chart:",
-                    ['DZ Win %', 'NZ Win %', 'OZ Win %'],
-                    default=['DZ Win %', 'NZ Win %', 'OZ Win %']
-                )
-
-            filtered_fo = processed_fo[processed_fo['Total Faceoffs'] >= min_fo_zone].sort_values(by='Total Win %', ascending=False).reset_index(drop=True)
-
-            st.dataframe(
-                filtered_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Tot', 'DZ Win %', 'NZ Tot', 'NZ Win %', 'OZ Tot', 'OZ Win %']],
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.markdown("### 📊 Faceoff Win % by Selected Zones (Top 15 Players)")
-            top_zone_fo = filtered_fo.head(15)
-            if not top_zone_fo.empty and selected_zones:
-                melted = top_zone_fo.melt(
-                    id_vars=['Player'], 
-                    value_vars=selected_zones,
-                    var_name='Zone', value_name='Win %'
-                )
-                fig_zone = px.bar(
-                    melted, x='Player', y='Win %', color='Zone',
-                    barmode='group',
-                    title="Faceoff Win Percentage by Filtered Zones",
-                    labels={'Win %': 'Win %'}
-                )
-                fig_zone.update_layout(xaxis_type='category', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_zone, use_container_width=True)
+            st.dataframe(processed_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Win %', 'NZ Win %', 'OZ Win %']], use_container_width=True, hide_index=True)
         else:
             st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
 
