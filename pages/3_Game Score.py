@@ -46,12 +46,12 @@ def load_faceoffs_data(file_path):
 @st.cache_data
 def load_teams_data(file_path):
     try:
-        df_teams = pd.read_excel(file_path, sheet_name='Teams')
+        df_teams = pd.read_excel(file_path, sheet_name='Teams SDHL')
         df_teams.columns = [str(col).strip() for col in df_teams.columns]
         return df_teams
     except Exception as e:
         try:
-            df_teams = pd.read_excel(f"../{file_path}", sheet_name='Teams')
+            df_teams = pd.read_excel(f"../{file_path}", sheet_name='Teams SDHL')
             df_teams.columns = [str(col).strip() for col in df_teams.columns]
             return df_teams
         except Exception as e2:
@@ -439,103 +439,3 @@ if df is not None:
             if team_col in df_filtered.columns:
                 group_cols.append(team_col)
             if col_pos:
-                group_cols.append('Pos_clean')
-
-            rates_agg = df_filtered.groupby(group_cols).agg(
-                Games=('Game_Score', 'count'),
-                Total_TOI=('TOI_clean', 'sum'),
-                Avg_TOI=('TOI_clean', 'mean'),
-                Total_xGF=('xG_For_clean', 'sum'),
-                Total_xGA=('xG_Opp_clean', 'sum'),
-                Blocked_Shots=('Block_clean', 'sum')
-            ).reset_index()
-
-            rates_agg = rates_agg[(rates_agg['Games'] >= min_games_rates) & (rates_agg['Avg_TOI'] >= min_toi_rates)]
-
-            rates_agg['xGF/60'] = (rates_agg['Total_xGF'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
-            rates_agg['xGA/60'] = (rates_agg['Total_xGA'] / rates_agg['Total_TOI'].replace(0, 1)) * 60
-            rates_agg['Net xG/60'] = rates_agg['xGF/60'] - rates_agg['xGA/60']
-
-            rates_rename = {player_col: 'Player'}
-            if team_col in df_filtered.columns:
-                rates_rename[team_col] = 'Team'
-            if col_pos:
-                rates_rename['Pos_clean'] = 'Position'
-            rates_agg = rates_agg.rename(columns=rates_rename)
-
-            rates_agg = rates_agg.round(2)
-            rates_agg = rates_agg.sort_values(by="Net xG/60", ascending=False).reset_index(drop=True)
-
-            st.dataframe(
-                rates_agg[['Player', 'Team', 'Position', 'Games', 'Avg_TOI', 'Total_TOI', 'xGF/60', 'xGA/60', 'Net xG/60', 'Blocked_Shots']],
-                use_container_width=True,
-                hide_index=True
-            )
-
-    elif selected_tab == "🏒 Faceoffs by Zone":
-        st.subheader("🏒 Faceoff Circle Analytics by Zone")
-        if df_faceoffs is not None:
-            fo_df = df_faceoffs.copy()
-            fo_player_col = next((c for c in fo_df.columns if 'player' in c.lower()), 'Player')
-            fo_team_col = next((c for c in fo_df.columns if 'team' in c.lower()), 'Team')
-            
-            col_dz_tot = next((c for c in fo_df.columns if 'dz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
-            col_dz_won = next((c for c in fo_df.columns if 'dz' in c.lower() and 'won' in c.lower()), None)
-            col_nz_tot = next((c for c in fo_df.columns if 'nz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
-            col_nz_won = next((c for c in fo_df.columns if 'nz' in c.lower() and 'won' in c.lower()), None)
-            col_oz_tot = next((c for c in fo_df.columns if 'oz' in c.lower() and ('in' in c.lower() or 'total' in c.lower()) and 'won' not in c.lower()), None)
-            col_oz_won = next((c for c in fo_df.columns if 'oz' in c.lower() and 'won' in c.lower()), None)
-
-            dz_tot = get_col(fo_df, col_dz_tot) if col_dz_tot else pd.Series(0, index=fo_df.index)
-            dz_won = get_col(fo_df, col_dz_won) if col_dz_won else pd.Series(0, index=fo_df.index)
-            nz_tot = get_col(fo_df, col_nz_tot) if col_nz_tot else pd.Series(0, index=fo_df.index)
-            nz_won = get_col(fo_df, col_nz_won) if col_nz_won else pd.Series(0, index=fo_df.index)
-            oz_tot = get_col(fo_df, col_oz_tot) if col_oz_tot else pd.Series(0, index=fo_df.index)
-            oz_won = get_col(fo_df, col_oz_won) if col_oz_won else pd.Series(0, index=fo_df.index)
-
-            processed_fo = pd.DataFrame()
-            processed_fo['Player'] = fo_df[fo_player_col] if fo_player_col in fo_df.columns else "Unknown"
-            processed_fo['Team'] = fo_df[fo_team_col] if fo_team_col in fo_df.columns else "Unknown"
-            processed_fo['DZ Win %'] = ((dz_won / dz_tot.replace(0, 1)) * 100).round(1)
-            processed_fo['NZ Win %'] = ((nz_won / nz_tot.replace(0, 1)) * 100).round(1)
-            processed_fo['OZ Win %'] = ((oz_won / oz_tot.replace(0, 1)) * 100).round(1)
-            processed_fo['Total Faceoffs'] = dz_tot + nz_tot + oz_tot
-            processed_fo['Total Win %'] = (((dz_won + nz_won + oz_won) / processed_fo['Total Faceoffs'].replace(0, 1)) * 100).round(1)
-
-            st.dataframe(processed_fo[['Player', 'Team', 'Total Faceoffs', 'Total Win %', 'DZ Win %', 'NZ Win %', 'OZ Win %']], use_container_width=True, hide_index=True)
-        else:
-            st.warning("Could not find 'Faceoffs' sheet in the Excel file.")
-
-    elif selected_tab == "📋 Teams SDHL":
-        st.subheader("📋 SDHL Team-Level Analytics & Corsi")
-        st.caption("Joukkuekohtaiset tilastot: Corsi%, maalit, maalipaikat, aloitukset ja odotetut maalit (xG).")
-
-        if df_teams is not None:
-            teams_df = df_teams.copy()
-            st.dataframe(teams_df, use_container_width=True, hide_index=True)
-
-            # Visuaalinen vertailu Corsi% ja Net xG -arvoille jos sarakkeet löytyvät
-            cors_col = next((c for c in teams_df.columns if 'corsi' in c.lower()), None)
-            team_name_col = next((c for c in teams_df.columns if 'team' in c.lower()), None)
-            net_xg_col = next((c for c in teams_df.columns if 'net xg' in c.lower() or ('net' in c.lower() and 'xg' in c.lower())), None)
-
-            if cors_col and team_name_col:
-                st.markdown("### 📊 Joukkueiden Corsi% -vertailu (Kiekonhallinta)")
-                fig_corsi = px.bar(
-                    teams_df.sort_values(by=cors_col, ascending=True),
-                    x=cors_col, y=team_name_col,
-                    orientation='h',
-                    title="Corsi% by Team",
-                    labels={cors_col: 'Corsi %', team_name_col: 'Team'},
-                    text_auto=True,
-                    color=cors_col,
-                    color_continuous_scale='Blues'
-                )
-                fig_corsi.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
-                st.plotly_chart(fig_corsi, use_container_width=True)
-        else:
-            st.warning("Could not find 'Teams' sheet in the Excel file. Varmista, että Excel-tiedostossa on 'Teams'-niminen välilehti.")
-
-    elif selected_tab == "📁 Raw Data":
-        st.subheader("Raw Data and Calculated Game Score Values")
-        st.dataframe(df_filtered, use_container_width=True)
